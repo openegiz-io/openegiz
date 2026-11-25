@@ -1,0 +1,243 @@
+{{- if .Values.init.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openegiz.init.fullname" . }}-config
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "init") | nindent 4 }}
+data:
+  basic-policy.json: |
+    {
+      "policyId": "default:basic_policy",
+      "entries": {
+        "DEFAULT": {
+          "subjects": {
+            "{{ "{{ request:subjectId }}" }}": {
+              "type": "Ditto user authenticated via nginx"
+            }
+          },
+          "resources": {
+            "policy:/": {
+              "grant": ["READ", "WRITE"],
+              "revoke": []
+            },
+            "thing:/": {
+              "grant": ["READ", "WRITE"],
+              "revoke": []
+            },
+            "message:/": {
+              "grant": ["READ", "WRITE"],
+              "revoke": []
+            }
+          }
+        }
+      }
+    }
+  mosquitto-source-connection.json: |
+    {
+      "name": "mosquitto-source-connection",
+      "connectionType": "mqtt-5",
+      "connectionStatus": "open",
+      "failoverEnabled": true,
+      "uri": "__MQTT_URI__",
+      "sources": [
+        {
+          "addresses": ["telemetry/#"],
+          "consumerCount": 1,
+          "qos": 0,
+          "authorizationContext": [
+            "nginx:ditto"
+          ]
+        }
+      ],
+      "targets": []
+    }
+  mosquitto-target-connection.json: |
+    {
+      "name": "mosquitto-target-connection",
+      "connectionType": "mqtt-5",
+      "connectionStatus": "open",
+      "failoverEnabled": true,
+      "uri": "__MQTT_URI__",
+      "sources": [],
+      "targets": [
+        {
+          "address": "{{ .Values.telegraf.topicPrefix }}/{{ "{{ topic:channel }}" }}/{{ "{{ topic:criterion }}" }}/{{ "{{ thing:namespace }}" }}/{{ "{{ thing:name }}" }}",
+          "qos": 1,
+          "topics": [
+            "_/_/things/twin/events?extraFields=thingId,attributes/_parents,features/idSimulationRun/properties/value",
+            "_/_/things/live/messages",
+            "_/_/things/live/commands"
+          ],
+          "authorizationContext": [
+            "nginx:ditto"
+          ]
+        }
+      ]
+    }
+  setup.sh: |
+    #!/bin/sh
+    # Idempotent post-install / post-upgrade bootstrap for Eclipse Ditto:
+    # creates default:basic_policy and the Mosquitto source/target connections.
+    set -eu
+
+    DEVOPS_AUTH="devops:${DITTO_DEVOPS_PASSWORD}"
+    DITTO_AUTH="ditto:${DITTO_PASSWORD}"
+
+    urlencode() {
+      # Percent-encode characters unsafe in URI userinfo (POSIX/BusyBox awk safe).
+      printf '%s' "$1" | od -An -tu1 -v | tr -s ' \n' '\n' | awk '
+        NF {
+          n = $1 + 0
+          c = sprintf("%c", n)
+          if (c ~ /^[A-Za-z0-9._~-]$/) printf "%s", c
+          else printf "%%%02X", n
+        }
+      '
+    }
+
+    if [ "${MQTT_AUTH_ENABLED:-false}" = "true" ]; then
+      enc_user="$(urlencode "$MQTT_USERNAME")"
+      enc_pass="$(urlencode "$MQTT_PASSWORD")"
+      MQTT_URI="tcp://${enc_user}:${enc_pass}@${MQTT_HOST}:${MQTT_PORT}"
+    else
+      MQTT_URI="tcp://${MQTT_HOST}:${MQTT_PORT}"
+    fi
+    export MQTT_URI
+
+    render_json() {
+      # Substitute __MQTT_URI__ literally without interpreting & or \.
+      awk '{
+        s = $0
+        p = "__MQTT_URI__"
+        r = ENVIRON["MQTT_URI"]
+        while ((i = index(s, p)) > 0) {
+          s = substr(s, 1, i - 1) r substr(s, i + length(p))
+        }
+        print s
+      }' "$1" > "$2"
+    }
+
+    put() {
+      attempt=1
+      while :; do
+        status=$(curl --silent --show-error --max-time 70 --output /tmp/response --write-out '%{http_code}' \
+          -X PUT -u "$1" -H 'Content-Type: application/json' --data-binary "@$3" "$2") || true
+        case "$status" in
+          2??) echo "ok   $status PUT $2"; return 0 ;;
+          000|408|5??)
+            if [ "$attempt" -lt 10 ]; then
+              echo "retry $status PUT $2 (attempt $attempt of 10): $(cat /tmp/response 2>/dev/null)"
+              attempt=$((attempt + 1))
+              sleep 5
+              continue
+            fi ;;
+        esac
+        echo "FAIL $status PUT $2"; cat /tmp/response; echo; exit 1
+      done
+    }
+
+    ditto_ready() {
+      curl --silent --fail --max-time 10 -u "$DEVOPS_AUTH" "$DITTO_URL/status/health" \
+        | grep -q '"status" *: *"UP"' || return 1
+      for node in $DITTO_NODES; do
+        curl --silent --fail --max-time 10 -o /dev/null "http://$node:7626/ready" || return 1
+      done
+    }
+
+    echo "Waiting for Ditto to be ready..."
+    i=0
+    until ditto_ready; do
+      i=$((i + 1))
+      if [ "$i" -ge 90 ]; then
+        echo "Ditto did not become ready within 7.5 minutes" >&2
+        exit 1
+      fi
+      sleep 5
+    done
+    echo "Ditto is ready"
+
+    umask 077
+    render_json /init/mosquitto-source-connection.json /tmp/mosquitto-source-connection.json
+    render_json /init/mosquitto-target-connection.json /tmp/mosquitto-target-connection.json
+
+    put "$DITTO_AUTH"  "$DITTO_URL/api/2/policies/default:basic_policy"               /init/basic-policy.json
+    put "$DEVOPS_AUTH" "$DITTO_URL/api/2/connections/mosquitto-source-connection"     /tmp/mosquitto-source-connection.json
+    put "$DEVOPS_AUTH" "$DITTO_URL/api/2/connections/mosquitto-target-connection"     /tmp/mosquitto-target-connection.json
+    echo "OpenEgiz initialised"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "openegiz.init.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "init") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.init.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.init.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "openegiz.componentLabels" (dict "context" . "component" "init") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: init
+          image: "{{ .Values.init.image.repository }}:{{ .Values.init.image.tag }}"
+          imagePullPolicy: {{ .Values.init.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - /init/setup.sh
+          env:
+            - name: DITTO_URL
+              value: "http://{{ include "openegiz.ditto.nginx.fullname" . }}:{{ .Values.ditto.nginx.service.port }}"
+            - name: DITTO_NODES
+              value: "{{ include "openegiz.ditto.policies.fullname" . }} {{ include "openegiz.ditto.things.fullname" . }} {{ include "openegiz.ditto.thingsSearch.fullname" . }} {{ include "openegiz.ditto.connectivity.fullname" . }} {{ include "openegiz.ditto.gateway.fullname" . }}"
+            - name: MQTT_HOST
+              value: {{ include "openegiz.mosquitto.fullname" . | quote }}
+            - name: MQTT_PORT
+              value: {{ .Values.mosquitto.service.port | quote }}
+            - name: MQTT_AUTH_ENABLED
+              value: {{ .Values.mosquitto.auth.enabled | quote }}
+            - name: DITTO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: ditto-password
+            - name: DITTO_DEVOPS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: ditto-devops-password
+            {{- if .Values.mosquitto.auth.enabled }}
+            - name: MQTT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: mqtt-username
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: mqtt-password
+            {{- end }}
+          volumeMounts:
+            - name: init-config
+              mountPath: /init
+              readOnly: true
+          resources:
+            {{- toYaml .Values.init.resources | nindent 12 }}
+      volumes:
+        - name: init-config
+          configMap:
+            name: {{ include "openegiz.init.fullname" . }}-config
+            defaultMode: 0555
+{{- end }}

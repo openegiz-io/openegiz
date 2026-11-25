@@ -1,0 +1,53 @@
+{{- /*
+Template-time security and configuration invariants.
+Renders no Kubernetes resources; fails early on invalid values.
+*/ -}}
+{{- if and (ne .Values.profile "dev") (ne .Values.profile "production") -}}
+{{- fail (printf "profile must be 'dev' or 'production' (got %q)" .Values.profile) -}}
+{{- end -}}
+
+{{- if eq .Values.profile "production" -}}
+  {{- if ne .Values.mongodb.service.type "ClusterIP" -}}
+    {{- fail "Production Profile requires mongodb.service.type=ClusterIP (MongoDB must remain strictly cluster-internal)" -}}
+  {{- end -}}
+  {{- if ne .Values.influxdb.service.type "ClusterIP" -}}
+    {{- fail "Production Profile requires influxdb.service.type=ClusterIP (InfluxDB must remain strictly cluster-internal)" -}}
+  {{- end -}}
+  {{- if ne .Values.extendedApi.service.type "ClusterIP" -}}
+    {{- fail "Production Profile requires extendedApi.service.type=ClusterIP (Extended API must remain strictly cluster-internal)" -}}
+  {{- end -}}
+  {{- if or (not .Values.mosquitto.auth.enabled) .Values.mosquitto.allowAnonymous -}}
+    {{- fail "Production Profile requires mosquitto.auth.enabled=true and mosquitto.allowAnonymous=false" -}}
+  {{- end -}}
+  {{- if and .Values.ingress.enabled (not .Values.ingress.tls.enabled) -}}
+    {{- fail "Production Profile requires ingress.tls.enabled=true when ingress.enabled=true" -}}
+  {{- end -}}
+{{- end -}}
+
+{{- if and .Values.mosquitto.auth.enabled .Values.mosquitto.allowAnonymous -}}
+  {{- fail "mosquitto.allowAnonymous must be false when mosquitto.auth.enabled is true" -}}
+{{- end -}}
+
+{{- $tls := .Values.ingress.tls -}}
+{{- if and .Values.ingress.enabled $tls.enabled (not $tls.secretName) -}}
+  {{- if and (eq .Values.profile "production") (not (and $tls.grafanaSecretName $tls.dittoSecretName $tls.sceneServerSecretName)) -}}
+    {{- fail "Production Profile requires a shared Ingress TLS secret or a TLS secret for each host" -}}
+  {{- else if not (or $tls.grafanaSecretName $tls.dittoSecretName $tls.sceneServerSecretName) -}}
+    {{- fail "ingress.tls.enabled=true requires ingress.tls.secretName or at least one per-host *SecretName" -}}
+  {{- end -}}
+{{- end -}}
+
+{{- if not .Values.credentials.existingSecret -}}
+  {{- $_ := required "credentials.dittoPassword is required (or set credentials.existingSecret)" .Values.credentials.dittoPassword -}}
+  {{- $_ := required "credentials.dittoDevopsPassword is required (or set credentials.existingSecret)" .Values.credentials.dittoDevopsPassword -}}
+  {{- $_ := required "credentials.grafanaAdminPassword is required (or set credentials.existingSecret)" .Values.credentials.grafanaAdminPassword -}}
+  {{- $_ := required "credentials.influxdbAdminPassword is required (or set credentials.existingSecret)" .Values.credentials.influxdbAdminPassword -}}
+  {{- $_ := required "credentials.influxdbToken is required (or set credentials.existingSecret)" .Values.credentials.influxdbToken -}}
+  {{- if .Values.extendedApi.auth.enabled -}}
+    {{- $_ := required "credentials.extendedApiAuthToken is required when extendedApi.auth.enabled=true (or set credentials.existingSecret)" (trim .Values.credentials.extendedApiAuthToken) -}}
+  {{- end -}}
+  {{- if .Values.mosquitto.auth.enabled -}}
+    {{- $_ := required "credentials.mqttUsername is required when mosquitto.auth.enabled=true (or set credentials.existingSecret)" .Values.credentials.mqttUsername -}}
+    {{- $_ := required "credentials.mqttPassword is required when mosquitto.auth.enabled=true (or set credentials.existingSecret)" .Values.credentials.mqttPassword -}}
+  {{- end -}}
+{{- end -}}

@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a new capability or workflow for OpenEgiz
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who needs this and what can they currently do?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the workflow you want and how you would verify that it works.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and context
+      description: Include workarounds, affected Deployment Profiles, and related issues.

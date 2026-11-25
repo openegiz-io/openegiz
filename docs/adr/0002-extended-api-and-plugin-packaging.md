@@ -16,5 +16,5 @@ The Extended API will use a multi-stage TypeScript-to-JavaScript build (~100 MB 
 
 ## Consequences
 
-- `make up` and Helm installs pull prebuilt multi-arch images without compiling external code or fetching unverified URLs at runtime.
+- Helm release installs and Compose with `OPENEGIZ_RELEASE` pull prebuilt multi-architecture images. Compose without that setting builds from monorepo sources.
 - Project ownership and licensing notices for the adopted Extended API remain explicitly documented in `NOTICE`.

@@ -1,0 +1,144 @@
+{{- $sceneNginxConf := `server {
+  listen 80;
+  server_name _;
+
+  include /etc/nginx/mime.types;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # CORS headers for Grafana Unity panel
+  add_header Access-Control-Allow-Origin * always;
+  add_header Access-Control-Allow-Methods 'GET, OPTIONS' always;
+  add_header Access-Control-Allow-Headers '*' always;
+
+  # Disable caching so updated 3D Scenes always load
+  add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+  etag off;
+  if_modified_since off;
+
+  # Unity .data files
+  location ~* \.data$ {
+    types { }
+    default_type application/octet-stream;
+  }
+
+  location / {
+    try_files $uri $uri/ =404;
+  }
+}
+` -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openegiz.sceneServer.fullname" . }}-config
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "scene-server") | nindent 4 }}
+data:
+  default.conf: |
+    {{- $sceneNginxConf | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openegiz.sceneServer.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "scene-server") | nindent 4 }}
+spec:
+  type: {{ .Values.sceneServer.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.sceneServer.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "scene-server") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "openegiz.sceneServer.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "scene-server") | nindent 4 }}
+spec:
+  serviceName: {{ include "openegiz.sceneServer.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "scene-server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openegiz.componentLabels" (dict "context" . "component" "scene-server") | nindent 8 }}
+      annotations:
+        checksum/config: {{ $sceneNginxConf | sha256sum }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: init-build-dir
+          image: "{{ .Values.sceneServer.image.repository }}:{{ .Values.sceneServer.image.tag }}"
+          imagePullPolicy: {{ .Values.sceneServer.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              if [ ! -f /scenes/README.md ]; then
+                printf 'OpenEgiz 3D Scene server — upload compiled WebGL bundles into /usr/share/nginx/html/build.\n' > /scenes/README.md
+              fi
+          volumeMounts:
+            - name: scenes
+              mountPath: /scenes
+      containers:
+        - name: scene-server
+          image: "{{ .Values.sceneServer.image.repository }}:{{ .Values.sceneServer.image.tag }}"
+          imagePullPolicy: {{ .Values.sceneServer.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: scenes
+              mountPath: /usr/share/nginx/html/build
+          readinessProbe:
+            httpGet:
+              path: /build/README.md
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /build/README.md
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.sceneServer.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "openegiz.sceneServer.fullname" . }}-config
+        {{- if not .Values.sceneServer.persistence.enabled }}
+        - name: scenes
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.sceneServer.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: scenes
+        labels:
+          {{- include "openegiz.componentLabels" (dict "context" . "component" "scene-server") | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.sceneServer.persistence.accessModes | nindent 10 }}
+        {{- include "openegiz.storageClass" (dict "context" . "storageClass" .Values.sceneServer.persistence.storageClass) | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.sceneServer.persistence.size }}
+  {{- end }}

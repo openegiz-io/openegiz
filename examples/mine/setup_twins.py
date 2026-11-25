@@ -4,6 +4,7 @@
 import base64
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.error
@@ -12,9 +13,11 @@ import urllib.request
 DITTO_URL = os.environ.get("DITTO_URL", "http://localhost:8080").rstrip("/")
 DITTO_USER = os.environ.get("DITTO_USER", "ditto")
 DITTO_PASSWORD = os.environ["DITTO_PASSWORD"]
+DITTO_CA_CERT = os.environ.get("DITTO_CA_CERT", "")
 TWINS_FILE = os.environ.get("TWINS_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "twins.json"))
 
 AUTH = "Basic " + base64.b64encode(f"{DITTO_USER}:{DITTO_PASSWORD}".encode()).decode()
+SSL_CONTEXT = ssl.create_default_context(cafile=DITTO_CA_CERT) if DITTO_CA_CERT else None
 
 
 def put(thing_id, body):
@@ -24,7 +27,7 @@ def put(thing_id, body):
         method="PUT",
         headers={"Authorization": AUTH, "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
         return response.status
 
 

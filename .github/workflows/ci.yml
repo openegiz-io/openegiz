@@ -19,6 +19,7 @@ jobs:
         run: make lint
 
   compose-e2e:
+    # Keep this check name aligned with main's required status checks.
     name: compose e2e (${{ matrix.runner }})
     needs: lint
     strategy:
@@ -33,15 +34,10 @@ jobs:
         run: make up
       - name: make smoke
         run: make smoke
-      - name: Example Mine on top, smoke again
-        run: |
-          make example-mine
-          make smoke
-      - name: Restart keeps the Example Mine
-        run: |
-          make down
-          make up
-          make smoke
+      - name: Start Example Mine
+        run: make example-mine
+      - name: Verify Twin and Telemetry persistence across restart
+        run: bash scripts/compose-smoke.sh --restart
       - name: Memory actually used
         if: always()
         run: docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}'
@@ -50,3 +46,148 @@ jobs:
         run: |
           docker compose -f deploy/compose/docker-compose.yml ps -a
           docker compose -f deploy/compose/docker-compose.yml logs --no-color --tail=200
+
+  compose-prod-e2e:
+    name: compose prod e2e (${{ matrix.runner }})
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: make up-prod
+        run: make up-prod
+      - name: make smoke (Production Profile)
+        run: make smoke
+      - name: Start Example Mine on the Production Profile
+        run: make example-mine
+      - name: Verify Twin and Telemetry persistence across Production Profile restart
+        run: bash scripts/compose-smoke.sh --restart
+      - name: Verify optional MQTTS listener (port 8883)
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/compose/mosquitto/certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=OpenEgiz-CI-CA" \
+            -keyout deploy/compose/mosquitto/certs/ca.key \
+            -out deploy/compose/mosquitto/certs/ca.crt 2>/dev/null
+          openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" \
+            -keyout deploy/compose/mosquitto/certs/server.key \
+            -out deploy/compose/mosquitto/certs/server.csr 2>/dev/null
+          openssl x509 -req -in deploy/compose/mosquitto/certs/server.csr \
+            -CA deploy/compose/mosquitto/certs/ca.crt -CAkey deploy/compose/mosquitto/certs/ca.key -CAcreateserial \
+            -out deploy/compose/mosquitto/certs/server.crt -days 1 \
+            -extfile <(printf "subjectAltName=DNS:localhost,DNS:mosquitto,IP:127.0.0.1\n") 2>/dev/null
+          chmod 644 deploy/compose/mosquitto/certs/ca.crt deploy/compose/mosquitto/certs/server.crt deploy/compose/mosquitto/certs/server.key
+          rm -f deploy/compose/mosquitto/certs/ca.key deploy/compose/mosquitto/certs/server.csr deploy/compose/mosquitto/certs/ca.srl
+          sed -i 's/^MQTTS_ENABLED=.*/MQTTS_ENABLED=true/' deploy/compose/.env
+          make up-prod
+          set -a; . deploy/compose/.env; set +a
+          out="$(docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml -f deploy/compose/docker-compose.mqtts.yml \
+            exec -T mosquitto mosquitto_pub -h localhost -p 8883 --cafile /mosquitto/certs/ca.crt -t telemetry/mqtts-anon -m '{}' 2>&1)" && rc=0 || rc=$?
+          test "$rc" -ne 0 && printf '%s' "$out" | grep -qi 'not authori'
+          docker run --rm --network openegiz_default \
+            -v "$PWD/examples/oven:/oven:ro" \
+            -v "$PWD/deploy/compose/mosquitto/certs:/certs:ro" \
+            openegiz/example-mine:local python /oven/data_generator.py \
+            --mqtt-host mosquitto --mqtt-port 8883 \
+            --mqtt-username "$MQTT_USERNAME" --mqtt-password "$MQTT_PASSWORD" \
+            --mqtt-tls --mqtt-ca-certs /certs/ca.crt --steps 1
+          make smoke
+      - name: Memory actually used
+        if: always()
+        run: docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}'
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml ps -a
+          docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml logs --no-color --tail=200
+
+  helm-e2e:
+    name: helm e2e (kind)
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Create ephemeral kind cluster
+        uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: openegiz-ci
+          wait: 120s
+      - name: Build and load first-party images into kind
+        run: |
+          docker build --provenance=false -t ghcr.io/openegiz-io/extended-api:ci services/extended-api
+          docker build --provenance=false -t ghcr.io/openegiz-io/grafana-plugins:ci -f packaging/grafana-plugins/Dockerfile .
+          kind load docker-image --name openegiz-ci ghcr.io/openegiz-io/extended-api:ci
+          kind load docker-image --name openegiz-ci ghcr.io/openegiz-io/grafana-plugins:ci
+      - name: Install OpenEgiz Helm chart (non-default release/namespace, Production MQTT auth, existingSecret)
+        run: |
+          NS="e2e-ns"
+          REL="e2e-rel"
+          kubectl create namespace "$NS"
+          kubectl -n "$NS" create secret generic e2e-creds \
+            --from-literal=ditto-password=ci-ditto-pass \
+            --from-literal=ditto-devops-password=ci-devops-pass \
+            --from-literal=grafana-admin-password=ci-grafana-pass \
+            --from-literal=influxdb-admin-password=ci-influx-pass \
+            --from-literal=influxdb-token=ci-influx-token-0123456789abcdef \
+            --from-literal=mqtt-username=openegiz \
+            --from-literal=mqtt-password=ci-mqtt-pass
+          helm upgrade --install "$REL" charts/openegiz -n "$NS" \
+            -f charts/openegiz/values-prod.yaml \
+            --set ingress.enabled=false \
+            --set credentials.existingSecret=e2e-creds \
+            --set extendedApi.image.tag=ci \
+            --set grafana.pluginsImage.tag=ci \
+            --set mongodb.persistence.size=1Gi \
+            --set influxdb.persistence.size=1Gi \
+            --set grafana.persistence.size=1Gi \
+            --set sceneServer.persistence.size=1Gi \
+            --wait --timeout=12m
+      - name: Run Helm E2E smoke test
+        run: RELEASE_NAME=e2e-rel NAMESPACE=e2e-ns SECRET_NAME=e2e-creds bash scripts/helm-smoke.sh
+      - name: Verify 3D Scene PVC persistence across helm upgrade
+        run: |
+          NS="e2e-ns"
+          REL="e2e-rel"
+          POD="$(kubectl -n "$NS" get pods -l "app.kubernetes.io/instance=$REL,app.kubernetes.io/component=scene-server" -o jsonpath='{.items[0].metadata.name}')"
+          SVC="$(kubectl -n "$NS" get svc -l "app.kubernetes.io/instance=$REL,app.kubernetes.io/component=scene-server" -o jsonpath='{.items[0].metadata.name}')"
+          tmp="$(mktemp)"
+          printf 'persists-across-helm-upgrade' > "$tmp"
+          chmod 0644 "$tmp"
+          kubectl -n "$NS" cp -c scene-server "$tmp" "$POD:/usr/share/nginx/html/build/upgrade-check.txt"
+          rm -f "$tmp"
+          helm upgrade "$REL" charts/openegiz -n "$NS" \
+            -f charts/openegiz/values-prod.yaml \
+            --set ingress.enabled=false \
+            --set credentials.existingSecret=e2e-creds \
+            --set extendedApi.image.tag=ci \
+            --set grafana.pluginsImage.tag=ci \
+            --set mongodb.persistence.size=1Gi \
+            --set influxdb.persistence.size=1Gi \
+            --set grafana.persistence.size=1Gi \
+            --set sceneServer.persistence.size=1Gi \
+            --wait --timeout=10m
+          kubectl -n "$NS" port-forward "svc/$SVC" 18095:80 >/dev/null 2>&1 &
+          pf_pid=$!
+          trap 'kill "$pf_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 20); do
+            body="$(curl -sf --max-time 5 http://127.0.0.1:18095/build/upgrade-check.txt || true)"
+            [ "$body" = "persists-across-helm-upgrade" ] && break
+            sleep 1
+          done
+          test "$body" = "persists-across-helm-upgrade"
+          echo "ok   3D Scene artifact persisted across helm upgrade"
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl -n e2e-ns get pods,pvc,svc,jobs -o wide || true
+          kubectl -n e2e-ns describe pods || true
+          for p in $(kubectl -n e2e-ns get pods -o name); do
+            echo "=== $p ==="
+            kubectl -n e2e-ns logs "$p" --all-containers --tail=100 || true
+          done

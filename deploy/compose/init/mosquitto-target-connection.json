@@ -7,7 +7,7 @@
     "sources": [],
     "targets": [
         {
-            "address": "opentwins/{{ topic:channel }}/{{ topic:criterion }}/{{ thing:namespace }}/{{ thing:name }}",
+            "address": "openegiz/{{ topic:channel }}/{{ topic:criterion }}/{{ thing:namespace }}/{{ thing:name }}",
             "qos": 1,
             "topics": [
                 "_/_/things/twin/events?extraFields=thingId,attributes/_parents,features/idSimulationRun/properties/value",

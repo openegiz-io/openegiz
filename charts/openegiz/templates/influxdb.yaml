@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openegiz.influxdb.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "influxdb") | nindent 4 }}
+spec:
+  type: {{ .Values.influxdb.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.influxdb.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "influxdb") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "openegiz.influxdb.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "influxdb") | nindent 4 }}
+spec:
+  serviceName: {{ include "openegiz.influxdb.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "influxdb") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openegiz.componentLabels" (dict "context" . "component" "influxdb") | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: influxdb
+          image: "{{ .Values.influxdb.image.repository }}:{{ .Values.influxdb.image.tag }}"
+          imagePullPolicy: {{ .Values.influxdb.image.pullPolicy }}
+          env:
+            - name: DOCKER_INFLUXDB_INIT_MODE
+              value: setup
+            - name: DOCKER_INFLUXDB_INIT_USERNAME
+              value: admin
+            - name: DOCKER_INFLUXDB_INIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: influxdb-admin-password
+            - name: DOCKER_INFLUXDB_INIT_ORG
+              value: {{ .Values.influxdb.org | quote }}
+            - name: DOCKER_INFLUXDB_INIT_BUCKET
+              value: {{ .Values.influxdb.bucket | quote }}
+            - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: influxdb-token
+          ports:
+            - name: http
+              containerPort: 8086
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/influxdb2
+              subPath: data
+            - name: data
+              mountPath: /etc/influxdb2
+              subPath: config
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.influxdb.resources | nindent 12 }}
+      {{- if not .Values.influxdb.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.influxdb.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "openegiz.componentLabels" (dict "context" . "component" "influxdb") | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.influxdb.persistence.accessModes | nindent 10 }}
+        {{- include "openegiz.storageClass" (dict "context" . "storageClass" .Values.influxdb.persistence.storageClass) | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.influxdb.persistence.size }}
+  {{- end }}

@@ -39,7 +39,7 @@ ditto_ready() {
     curl --silent --fail --max-time 10 -u "$DEVOPS_AUTH" "$DITTO_URL/status/health" \
         | grep -q '"status" *: *"UP"' || return 1
     for node in policies things things-search connectivity gateway; do
-        curl --silent --fail --max-time 10 -o /dev/null "http://$node:8558/ready" || return 1
+        curl --silent --fail --max-time 10 -o /dev/null "http://$node:7626/ready" || return 1
     done
 }
 
@@ -55,7 +55,40 @@ until ditto_ready; do
 done
 echo "Ditto is ready"
 
+urlencode() {
+    # Percent-encode every byte outside RFC 3986 unreserved [A-Za-z0-9._~-],
+    # making the output safe for URI userinfo, JSON strings, and sed.
+    printf '%s' "$1" | od -An -tx1 -v | tr -s ' \n' '\n' | while IFS= read -r hex; do
+        [ -n "$hex" ] || continue
+        case "$hex" in
+            2d|2e|3[0-9]|4[1-9a-f]|5[0-9a]|5f|6[1-9a-f]|7[0-9a]|7e)
+                printf "\\$(printf '%03o' "0x$hex")" ;;
+            *)
+                printf '%%%s' "$(printf '%s' "$hex" | tr 'a-f' 'A-F')" ;;
+        esac
+    done
+}
+
+put_connection() {
+    # $1 url, $2 template json
+    if [ "${MQTT_AUTH_ENABLED:-false}" = "true" ]; then
+        if [ -z "${MQTT_USERNAME:-}" ] || [ -z "${MQTT_PASSWORD:-}" ]; then
+            echo "ERROR: MQTT_AUTH_ENABLED=true requires MQTT_USERNAME and MQTT_PASSWORD" >&2
+            exit 1
+        fi
+        conn_file="/tmp/connection.json"
+        umask 077
+        enc_user=$(urlencode "$MQTT_USERNAME")
+        enc_pass=$(urlencode "$MQTT_PASSWORD")
+        sed "s|tcp://mosquitto:1883|tcp://${enc_user}:${enc_pass}@mosquitto:1883|g" "$2" >"$conn_file"
+        put "$DEVOPS_AUTH" "$1" "$conn_file"
+        rm -f "$conn_file"
+    else
+        put "$DEVOPS_AUTH" "$1" "$2"
+    fi
+}
+
 put "$DITTO_AUTH"  "$DITTO_URL/api/2/policies/default:basic_policy"                  /init/basic-policy.json
-put "$DEVOPS_AUTH" "$DITTO_URL/api/2/connections/mosquitto-source-connection"        /init/mosquitto-source-connection.json
-put "$DEVOPS_AUTH" "$DITTO_URL/api/2/connections/mosquitto-target-connection"        /init/mosquitto-target-connection.json
+put_connection     "$DITTO_URL/api/2/connections/mosquitto-source-connection"        /init/mosquitto-source-connection.json
+put_connection     "$DITTO_URL/api/2/connections/mosquitto-target-connection"        /init/mosquitto-target-connection.json
 echo "OpenEgiz initialised"

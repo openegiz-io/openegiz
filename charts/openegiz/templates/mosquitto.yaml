@@ -1,0 +1,137 @@
+{{- $mosquittoConf := printf "listener 1883 0.0.0.0\nallow_anonymous %t\n%slog_dest stdout\nlog_type error\nlog_type warning\nlog_type notice\nlog_timestamp true\npersistence true\npersistence_location /mosquitto/data/\n" .Values.mosquitto.allowAnonymous (ternary "password_file /mosquitto/auth/passwd\n" "" .Values.mosquitto.auth.enabled) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openegiz.mosquitto.fullname" . }}-config
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "mosquitto") | nindent 4 }}
+data:
+  mosquitto.conf: |
+    {{- $mosquittoConf | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openegiz.mosquitto.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "mosquitto") | nindent 4 }}
+spec:
+  type: {{ .Values.mosquitto.service.type }}
+  ports:
+    - name: mqtt
+      port: {{ .Values.mosquitto.service.port }}
+      targetPort: mqtt
+      protocol: TCP
+  selector:
+    {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "mosquitto") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "openegiz.mosquitto.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "mosquitto") | nindent 4 }}
+spec:
+  serviceName: {{ include "openegiz.mosquitto.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "mosquitto") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openegiz.componentLabels" (dict "context" . "component" "mosquitto") | nindent 8 }}
+      annotations:
+        checksum/config: {{ $mosquittoConf | sha256sum }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.mosquitto.auth.enabled }}
+      initContainers:
+        - name: generate-passwd
+          image: "{{ .Values.mosquitto.image.repository }}:{{ .Values.mosquitto.image.tag }}"
+          imagePullPolicy: {{ .Values.mosquitto.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              umask 077
+              mosquitto_passwd -b -c /mosquitto/auth/passwd "$MQTT_USERNAME" "$MQTT_PASSWORD"
+              chown 1883:1883 /mosquitto/auth/passwd
+              chmod 0600 /mosquitto/auth/passwd
+          env:
+            - name: MQTT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: mqtt-username
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: mqtt-password
+          volumeMounts:
+            - name: auth
+              mountPath: /mosquitto/auth
+      {{- end }}
+      containers:
+        - name: mosquitto
+          image: "{{ .Values.mosquitto.image.repository }}:{{ .Values.mosquitto.image.tag }}"
+          imagePullPolicy: {{ .Values.mosquitto.image.pullPolicy }}
+          ports:
+            - name: mqtt
+              containerPort: 1883
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config/mosquitto.conf
+              subPath: mosquitto.conf
+              readOnly: true
+            - name: data
+              mountPath: /mosquitto/data
+            {{- if .Values.mosquitto.auth.enabled }}
+            - name: auth
+              mountPath: /mosquitto/auth
+              readOnly: true
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: mqtt
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: mqtt
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.mosquitto.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "openegiz.mosquitto.fullname" . }}-config
+        {{- if .Values.mosquitto.auth.enabled }}
+        - name: auth
+          emptyDir:
+            medium: Memory
+        {{- end }}
+        {{- if not .Values.mosquitto.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.mosquitto.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "openegiz.componentLabels" (dict "context" . "component" "mosquitto") | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.mosquitto.persistence.accessModes | nindent 10 }}
+        {{- include "openegiz.storageClass" (dict "context" . "storageClass" .Values.mosquitto.persistence.storageClass) | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.mosquitto.persistence.size }}
+  {{- end }}

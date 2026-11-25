@@ -22,7 +22,7 @@ x-ditto-service: &ditto-service
   # unsettled on a busy host, and Compose fails `--wait` and `depends_on` at
   # once on "unhealthy". init waits for readiness itself (init/setup.sh).
   healthcheck:
-    test: ["CMD-SHELL", "curl --fail --silent $$(hostname):8558/alive || exit 1"]
+    test: ["CMD-SHELL", "curl --fail --silent $$(hostname):7626/alive || exit 1"]
     interval: 15s
     timeout: 10s
     retries: 8
@@ -54,20 +54,20 @@ x-ditto-service: &ditto-service
 #   OOMKilled=false), 5-60 minutes into a run, and again after every restart.
 #   Same heaps as before; every limit is now heap + 512 MiB. `make smoke`
 #   checks that margin.
-# - JDK 17.0.8 in the Ditto 3.3.7 images cannot read the container limit on
+# - Older Ditto images (3.3.7, JDK 17.0.8) could not read the container limit on
 #   kernels without the cgroup v1 memory controller (Docker Desktop's 6.12
 #   kernel): a percentage then means a share of all of Docker's memory, and
 #   every JVM was killed within minutes. -Xmx does not depend on that.
 x-ditto-java-options: &ditto-java-options >-
   -XX:ActiveProcessorCount=2 -XX:+ExitOnOutOfMemoryError -XX:+UseContainerSupport
   -XX:+UseStringDeduplication -Xss512k -XX:+UseG1GC
-  -XX:MaxGCPauseMillis=150 -Dakka.coordinated-shutdown.exit-jvm=on
-  -Dakka.cluster.shutdown-after-unsuccessful-join-seed-nodes=180s
-  -Dakka.cluster.failure-detector.threshold=15.0
-  -Dakka.cluster.failure-detector.expected-response-after=10s
-  -Dakka.cluster.failure-detector.acceptable-heartbeat-pause=60s
+  -XX:MaxGCPauseMillis=150 -Dpekko.coordinated-shutdown.exit-jvm=on
+  -Dpekko.cluster.shutdown-after-unsuccessful-join-seed-nodes=180s
+  -Dpekko.cluster.failure-detector.threshold=15.0
+  -Dpekko.cluster.failure-detector.expected-response-after=10s
+  -Dpekko.cluster.failure-detector.acceptable-heartbeat-pause=60s
   -Dditto.cluster.sbr.auto-enable-after=0s
-  -Dakka.cluster.split-brain-resolver.down-all-when-unstable=off
+  -Dpekko.cluster.split-brain-resolver.down-all-when-unstable=off
   -Dditto.protocol.blocklist.0=raw-request-uri -Dditto.protocol.blocklist.1=cache-control
   -Dditto.protocol.blocklist.2=connection -Dditto.protocol.blocklist.3=timeout-access
   -Dditto.protocol.blocklist.4=accept-encoding -Dditto.protocol.blocklist.5=x-forwarded-scheme
@@ -82,7 +82,7 @@ x-ditto-java-options: &ditto-java-options >-
 services:
   # ---------------------------------------------------------------- storage
   mongodb:
-    image: docker.io/library/mongo:6.0
+    image: docker.io/library/mongo:8.0.38
     restart: unless-stopped
     command: ["mongod", "--bind_ip_all", "--storageEngine", "wiredTiger"]
     mem_limit: 512m
@@ -99,7 +99,7 @@ services:
       start_period: 20s
 
   influxdb:
-    image: docker.io/library/influxdb:2.7.4-alpine
+    image: docker.io/library/influxdb:2.7.12-alpine
     restart: unless-stopped
     mem_limit: 512m
     environment:
@@ -108,7 +108,7 @@ services:
       # Plain ${VAR} on purpose: a "${VAR:?hint}" next to the username trips
       # generic secret scanners. A missing .env still fails on other values.
       DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD}
-      DOCKER_INFLUXDB_INIT_ORG: opentwins
+      DOCKER_INFLUXDB_INIT_ORG: openegiz
       DOCKER_INFLUXDB_INIT_BUCKET: default
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:?run make up to generate .env}
     ports:
@@ -125,7 +125,7 @@ services:
 
   # ------------------------------------------------------------- messaging
   mosquitto:
-    image: docker.io/library/eclipse-mosquitto:2.0.18
+    image: docker.io/library/eclipse-mosquitto:2.0.23
     restart: unless-stopped
     mem_limit: 64m
     ports:
@@ -140,7 +140,7 @@ services:
       retries: 6
 
   telegraf:
-    image: docker.io/library/telegraf:1.37-alpine
+    image: docker.io/library/telegraf:1.40.3-alpine
     restart: unless-stopped
     # Run as the telegraf user: as root the image's entrypoint runs setcap on
     # the 270 MB binary, overlayfs copies the whole file up, and those dirty
@@ -150,6 +150,8 @@ services:
     mem_limit: 256m
     environment:
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN}
+      MQTT_USERNAME: ""
+      MQTT_PASSWORD: ""
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     depends_on:
@@ -161,7 +163,7 @@ services:
   # ----------------------------------------------------------- Eclipse Ditto
   policies:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-policies:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-policies:${DITTO_VERSION:-3.8.15}
     mem_limit: 768m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx256m
@@ -172,7 +174,7 @@ services:
 
   things:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-things:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-things:${DITTO_VERSION:-3.8.15}
     mem_limit: 768m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx256m
@@ -183,7 +185,7 @@ services:
 
   things-search:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-things-search:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-things-search:${DITTO_VERSION:-3.8.15}
     mem_limit: 768m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx256m
@@ -194,7 +196,7 @@ services:
 
   connectivity:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-connectivity:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-connectivity:${DITTO_VERSION:-3.8.15}
     mem_limit: 896m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx384m
@@ -205,7 +207,7 @@ services:
 
   gateway:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-gateway:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-gateway:${DITTO_VERSION:-3.8.15}
     mem_limit: 768m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx256m
@@ -221,7 +223,7 @@ services:
       JAVA_TOOL_OPTIONS: *ditto-java-options
 
   ditto-nginx:
-    image: docker.io/library/nginx:1.25-alpine
+    image: docker.io/library/nginx:1.28.3-alpine
     restart: unless-stopped
     mem_limit: 64m
     environment:
@@ -247,7 +249,7 @@ services:
 
   # Policy + Ditto<->Mosquitto connections (the chart's post-install jobs).
   init:
-    image: docker.io/curlimages/curl:8.10.1
+    image: docker.io/curlimages/curl:8.23.0
     restart: "no"
     entrypoint: ["/bin/sh", "/init/setup.sh"]
     environment:
@@ -261,22 +263,16 @@ services:
       mosquitto:
         condition: service_healthy
 
-  # ------------------------------------------------- OpenTwins extended API
-  # Upstream sources carry no license file, so OpenEgiz never publishes an
-  # image of it: every install builds it locally from the pinned commit
-  # (same commit and Dockerfile as rebuild/extended-api/).
+  # ------------------------------------------------- OpenEgiz extended API
+  # First-party service, adopted from ertis-research/extended-api-for-eclipse-ditto
+  # (pinned commit b49663d) into services/extended-api/. Built from the
+  # monorepo: no external git clone at startup. CI publishes the multi-arch
+  # image to GHCR; the local build below is the development fallback.
   extended-api:
     build:
-      context: https://github.com/ertis-research/extended-api-for-eclipse-ditto.git#b49663dea326854a2323423eaeab7e7f54d325a7
-      dockerfile_inline: |
-        FROM node:20-slim
-        WORKDIR /usr/src/app
-        COPY package*.json yarn.lock ./
-        RUN yarn install --frozen-lockfile
-        COPY . .
-        EXPOSE 8080
-        CMD ["yarn", "start"]
-    image: openegiz/ditto-extended-api:local-b49663d
+      context: ../../services/extended-api
+    # Tag for local builds. Use docker-compose.release.yml for registry images.
+    image: ${EXTENDED_API_IMAGE:-ghcr.io/openegiz-io/extended-api:dev}
     restart: unless-stopped
     mem_limit: 512m
     environment:
@@ -289,6 +285,13 @@ services:
       DITTO_USERNAME_DEVOPS: devops
       DITTO_PASSWORD_DEVOPS: ${DITTO_DEVOPS_PASSWORD}
       ALL_LOGS: "false"
+      # Authentication is off by default: in both profiles only Grafana's
+      # plugin proxy (internal network) calls this API. Set
+      # EXTENDED_API_AUTH_ENABLED=true and EXTENDED_API_AUTH_TOKEN to a
+      # shared secret when exposing the port beyond it (see
+      # services/extended-api/src/middleware/auth.ts).
+      AUTH_ENABLED: ${EXTENDED_API_AUTH_ENABLED:-false}
+      AUTH_TOKEN: ${EXTENDED_API_AUTH_TOKEN:-}
     ports:
       - "${OPENEGIZ_BIND:-127.0.0.1}:${EXTENDED_API_PORT:-8085}:8080"
     depends_on:
@@ -298,25 +301,26 @@ services:
         condition: service_started
 
   # ------------------------------------------------------------ dashboards
+  # Plugin Bundle init container: copies the reproducibly rebranded
+  # Grafana plugins into the shared plugins volume and exits. The image is
+  # built by packaging/grafana-plugins/Dockerfile straight from the branding
+  # patch pipeline (SRI hashes verified at build time) -- no plugin downloads,
+  # no insecure TLS flags at deploy time. The release overlay uses the
+  # corresponding versioned GHCR image without a local build context.
   grafana-plugins:
-    image: docker.io/library/busybox:1.36
+    image: ${GRAFANA_PLUGINS_IMAGE:-ghcr.io/openegiz-io/grafana-plugins:dev}
+    build:
+      context: ../..
+      dockerfile: packaging/grafana-plugins/Dockerfile
     restart: "no"
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        for p in ertis-opentwins-app ertis-unity-panel; do
-          rm -rf "/plugins/$$p"
-          unzip -q -o "/vendor/$$p.zip" -d /plugins
-        done
-        echo "Grafana plugins unpacked"
+    environment:
+      # Must match the grafana volume mount below.
+      PLUGINS_DIR: /plugins
     volumes:
-      - ../../vendor/grafana-plugins:/vendor:ro
       - grafana-plugins:/plugins
 
   grafana:
-    image: docker.io/grafana/grafana:12.3.0
+    image: docker.io/grafana/grafana:12.4.16
     restart: unless-stopped
     mem_limit: 512m
     environment:
@@ -358,9 +362,9 @@ services:
       start_period: 300s
 
   # Serves the Unity WebGL build straight from ./build in the repository, so
-  # an uploaded build survives restarts (the Helm deployment uses emptyDir).
+  # a build survives restarts. The Helm deployment uses a persistent volume.
   unity:
-    image: docker.io/library/nginx:1.25-alpine
+    image: docker.io/library/nginx:1.28.3-alpine
     restart: unless-stopped
     mem_limit: 64m
     ports:

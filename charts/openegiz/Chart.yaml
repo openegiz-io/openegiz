@@ -1,0 +1,19 @@
+apiVersion: v2
+name: openegiz
+description: OpenEgiz — self-contained industrial digital twin platform for Kubernetes
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+home: https://github.com/openegiz-io/openegiz
+sources:
+  - https://github.com/openegiz-io/openegiz
+annotations:
+  org.opencontainers.image.source: https://github.com/openegiz-io/openegiz
+keywords:
+  - openegiz
+  - digital-twin
+  - iot
+  - eclipse-ditto
+  - grafana
+  - influxdb
+  - mqtt

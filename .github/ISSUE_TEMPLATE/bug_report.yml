@@ -5,25 +5,25 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. Можно писать по-русски.
-
-        **Remove passwords before pasting logs** — `make up` prints them, and `deploy/compose/.env` holds them.
-        **Уберите пароли из логов перед вставкой.**
+        Remove credentials and private host details before pasting logs or commands.
   - type: dropdown
     id: deployment
     attributes:
       label: Deployment
       options:
-        - Docker Compose (make up)
-        - Helm on k3s
+        - Docker Compose Dev Profile
+        - Docker Compose Production Profile
+        - Helm Dev Profile
+        - Helm Production Profile
+        - Other
     validations:
       required: true
   - type: input
     id: version
     attributes:
       label: OpenEgiz version
-      description: Release tag or commit — output of `git describe --tags --always`
-      placeholder: v1.0.0-rc.1
+      description: Release tag or commit from `git describe --tags --always`
+      placeholder: v2.0.0-rc.1
     validations:
       required: true
   - type: textarea
@@ -38,8 +38,8 @@ body:
     attributes:
       label: Environment
       description: |
-        OS and CPU architecture (e.g. Ubuntu 24.04 amd64, Windows 11 + WSL2 Ubuntu-24.04, macOS arm64), and the output of:
-        `docker version`, `docker compose version`
+        Include OS and CPU architecture, Docker and Compose versions for Compose,
+        or Kubernetes distribution and Helm version for Kubernetes.
       render: text
     validations:
       required: true
@@ -47,7 +47,7 @@ body:
     id: status
     attributes:
       label: Service status and logs
-      description: Output of `make ps`, and `make logs S=<service>` for the failing service if there is one.
+      description: Include relevant output from `make ps` and `make logs S=<service>`, or from `kubectl` for Helm.
       render: text
   - type: checkboxes
     id: checks

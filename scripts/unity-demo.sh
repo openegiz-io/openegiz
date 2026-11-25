@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Download the demo Unity WebGL scene into ./build/.
-# The scene is 88 MB, so it lives in a GitHub release, not in git:
-# every clone of the platform (and every contest team repo) stays small.
+# The scene is 88 MB, so it lives in a GitHub release, not in git, keeping
+# clones of the platform small.
 set -euo pipefail
 
-BASE=${UNITY_DEMO_URL:-https://github.com/aleka07/openegiz/releases/download/unity-demo-1}
+BASE=${UNITY_DEMO_URL:-https://github.com/openegiz-io/openegiz/releases/download/unity-demo-1}
 cd "$(dirname "$0")/.."
 
 sha256() {

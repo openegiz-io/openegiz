@@ -1,0 +1,25 @@
+# OpenEgiz Production Profile reverse proxy.
+#
+# Single HTTPS/TLS entrypoint for Grafana, Eclipse Ditto HTTP/WebSocket API,
+# and the 3D Scene (Unity WebGL) file server.
+#
+# TLS mode is controlled by CADDY_TLS:
+# - `internal` (default): Caddy's local CA for localhost or private hosts.
+# - `<email>` (e.g. ops@example.com): automatic ACME (Let's Encrypt) for a
+#   public domain configured via OPENEGIZ_DOMAIN.
+{$OPENEGIZ_DOMAIN:localhost} {
+	tls {$CADDY_TLS:internal}
+
+	redir /ditto /ditto/ 308
+	handle_path /ditto/* {
+		reverse_proxy ditto-nginx:80
+	}
+
+	handle /build/* {
+		reverse_proxy unity:80
+	}
+
+	handle {
+		reverse_proxy grafana:3000
+	}
+}

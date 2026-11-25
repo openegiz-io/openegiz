@@ -1,5 +1,5 @@
 # build/
 
-Unity WebGL files for the Unity panel. The `unity` service serves this folder at `http://localhost:8090/build/<file>`.
+Put your compiled Unity WebGL files here. In the Compose Dev Profile, the `unity` service serves them at `http://localhost:8090/build/<filename>`.
 
-Empty by default. Either put your own build here (see "3D: Unity WebGL contract" in the root README), or run `make unity-demo` to download the demo scene (88 MB, kept out of git so clones stay small). The demo files are git-ignored by name, so give your own build a different name (e.g. `MineScene`) or it will not be committed.
+See the [3D Scene guide](../docs/3d-scenes.md) for the required files and URLs across Deployment Profiles. Use `make unity-demo` to download the sample scene (approximately 88 MB). Git ignores the sample files.

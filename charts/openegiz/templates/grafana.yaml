@@ -1,0 +1,238 @@
+{{- $influxUrl := printf "http://%s:%v" (include "openegiz.influxdb.fullname" .) .Values.influxdb.service.port -}}
+{{- $dittoUrl := printf "http://%s:%v" (include "openegiz.ditto.nginx.fullname" .) .Values.ditto.nginx.service.port -}}
+{{- $extendedUrl := printf "http://%s:%v" (include "openegiz.extendedApi.fullname" .) .Values.extendedApi.service.port -}}
+{{- $grafanaIni := `[plugins]
+plugin_admin_enabled = true
+allow_loading_unsigned_plugins = ertis-unity-panel,ertis-opentwins-app
+preinstall_disabled = true
+
+[navigation.app_sections]
+ertis-opentwins-app = root -1700
+
+[analytics]
+reporting_enabled = false
+check_for_updates = false
+
+[database]
+transaction_retries = 100
+query_retries = 10
+` -}}
+{{- $datasourceYaml := printf `apiVersion: 1
+datasources:
+  - name: openegiz
+    uid: openegiz-influxdb
+    type: influxdb
+    access: proxy
+    url: %s
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: %s
+      defaultBucket: %s
+    secureJsonData:
+      token: $INFLUXDB_TOKEN
+` $influxUrl .Values.influxdb.org .Values.influxdb.bucket -}}
+{{- $pluginYaml := printf `apiVersion: 1
+apps:
+  - type: ertis-opentwins-app
+    org_id: 1
+    jsonData:
+      dittoURL: %s
+      extendedURL: %s
+      dittoUsername: ditto
+      dittoDevopsUsername: devops
+    secureJsonData:
+      dittoPassword: $DITTO_PASSWORD
+      dittoBasicAuth: $DITTO_BASIC_AUTH
+      dittoDevopsPassword: $DITTO_DEVOPS_PASSWORD
+      dittoDevopsBasicAuth: $DITTO_DEVOPS_BASIC_AUTH
+` $dittoUrl $extendedUrl -}}
+{{- $dashboardsYaml := `apiVersion: 1
+providers:
+  - name: openegiz
+    folder: OpenEgiz
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true
+` -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openegiz.grafana.fullname" . }}-config
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "grafana") | nindent 4 }}
+data:
+  grafana.ini: |
+    {{- $grafanaIni | nindent 4 }}
+  datasource-influxdb.yaml: |
+    {{- $datasourceYaml | nindent 4 }}
+  plugin-openegiz-app.yaml: |
+    {{- $pluginYaml | nindent 4 }}
+  dashboards.yaml: |
+    {{- $dashboardsYaml | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openegiz.grafana.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "grafana") | nindent 4 }}
+spec:
+  type: {{ .Values.grafana.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.grafana.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "grafana") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "openegiz.grafana.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "grafana") | nindent 4 }}
+spec:
+  serviceName: {{ include "openegiz.grafana.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "grafana") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openegiz.componentLabels" (dict "context" . "component" "grafana") | nindent 8 }}
+      annotations:
+        checksum/config: {{ printf "%s%s%s%s" $grafanaIni $datasourceYaml $pluginYaml $dashboardsYaml | sha256sum }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 472
+      initContainers:
+        - name: install-plugins
+          image: "{{ .Values.grafana.pluginsImage.repository }}:{{ .Values.grafana.pluginsImage.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.grafana.pluginsImage.pullPolicy }}
+          env:
+            - name: PLUGINS_DIR
+              value: /var/lib/grafana-plugins
+          volumeMounts:
+            - name: plugins
+              mountPath: /var/lib/grafana-plugins
+      containers:
+        - name: grafana
+          image: "{{ .Values.grafana.image.repository }}:{{ .Values.grafana.image.tag }}"
+          imagePullPolicy: {{ .Values.grafana.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              export DITTO_BASIC_AUTH="$(printf 'ditto:%s' "$DITTO_PASSWORD" | base64 | tr -d '\n')"
+              export DITTO_DEVOPS_BASIC_AUTH="$(printf 'devops:%s' "$DITTO_DEVOPS_PASSWORD" | base64 | tr -d '\n')"
+              exec /run.sh
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: grafana-admin-password
+            - name: GF_PATHS_PLUGINS
+              value: /var/lib/grafana-plugins
+            - name: INFLUXDB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: influxdb-token
+            - name: DITTO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: ditto-password
+            - name: DITTO_DEVOPS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: ditto-devops-password
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: plugins
+              mountPath: /var/lib/grafana-plugins
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+            - name: config
+              mountPath: /etc/grafana/grafana.ini
+              subPath: grafana.ini
+              readOnly: true
+            - name: config
+              mountPath: /etc/grafana/provisioning/datasources/influxdb.yaml
+              subPath: datasource-influxdb.yaml
+              readOnly: true
+            - name: config
+              mountPath: /etc/grafana/provisioning/plugins/openegiz-app.yaml
+              subPath: plugin-openegiz-app.yaml
+              readOnly: true
+            - name: config
+              mountPath: /etc/grafana/provisioning/dashboards/openegiz.yaml
+              subPath: dashboards.yaml
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.grafana.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "openegiz.grafana.fullname" . }}-config
+        - name: plugins
+          emptyDir: {}
+        - name: dashboards
+          emptyDir: {}
+        {{- if not .Values.grafana.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.grafana.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "openegiz.componentLabels" (dict "context" . "component" "grafana") | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.grafana.persistence.accessModes | nindent 10 }}
+        {{- include "openegiz.storageClass" (dict "context" . "storageClass" .Values.grafana.persistence.storageClass) | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.grafana.persistence.size }}
+  {{- end }}

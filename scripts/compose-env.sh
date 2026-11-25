@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 #
 # Create deploy/compose/.env with fresh random credentials on first run.
-# An existing .env is never touched: the services keep their state in Docker
-# volumes, and regenerating passwords under them would lock you out.
+# Existing credentials are never overwritten: the services keep their state in
+# Docker volumes, and regenerating passwords under them would lock you out.
+# If an older .env is missing newer keys (e.g. Production Profile / MQTT auth
+# variables), only the missing keys are appended.
 #
 set -euo pipefail
 
-ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deploy/compose/.env"
-
-if [ -f "$ENV_FILE" ]; then
-  exit 0
-fi
+ENV_FILE="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deploy/compose/.env}"
 
 # `head` closing the pipe early makes `tr` die of SIGPIPE, which pipefail
 # would turn into a fatal error, hence the `|| true`.
@@ -22,6 +20,41 @@ rand() {
 }
 b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
 
+PROD_DEFAULTS=(
+  "OPENEGIZ_DOMAIN=localhost"
+  "OPENEGIZ_PROD_BIND=0.0.0.0"
+  "CADDY_TLS=internal"
+  "HTTP_PORT=80"
+  "HTTPS_PORT=443"
+  "MQTTS_ENABLED=false"
+  "MQTTS_PORT=8883"
+  "MQTT_USERNAME=openegiz"
+)
+
+append_if_missing() {
+  local key="$1" value="$2"
+  if ! grep -qE "^${key}=" "$ENV_FILE"; then
+    printf '%s=%s\n' "$key" "$value" >>"$ENV_FILE"
+    return 0
+  fi
+  return 1
+}
+
+if [ -f "$ENV_FILE" ]; then
+  umask 077
+  added=0
+  for entry in "${PROD_DEFAULTS[@]}"; do
+    key="${entry%%=*}"
+    val="${entry#*=}"
+    append_if_missing "$key" "$val" && added=1 || true
+  done
+  append_if_missing MQTT_PASSWORD "$(rand)" && added=1 || true
+  if [ "$added" -eq 1 ]; then
+    echo "Updated $ENV_FILE with missing Production Profile settings."
+  fi
+  exit 0
+fi
+
 ditto_password="$(rand)"
 devops_password="$(rand)"
 
@@ -31,10 +64,10 @@ cat >"$ENV_FILE" <<ENV
 # Never commit this file. Delete it only together with the volumes
 # (make clean), otherwise the services keep the old passwords.
 
-# --- network ---------------------------------------------------------------
-# 127.0.0.1 keeps the stack private to this machine (MQTT and the extended
-# API have no authentication). Set 0.0.0.0 to expose it on your LAN, and set
-# OPENEGIZ_PUBLIC_HOST to the address browsers use to reach this machine.
+# --- Dev Profile network ---------------------------------------------------
+# 127.0.0.1 keeps the Dev Profile private to this machine (MQTT and the
+# Extended API have no authentication in Dev). Set 0.0.0.0 to expose Dev on
+# your LAN, or use the Production Profile (make up-prod) for TLS and auth.
 OPENEGIZ_BIND=127.0.0.1
 OPENEGIZ_PUBLIC_HOST=localhost
 GRAFANA_PORT=3000
@@ -44,7 +77,7 @@ UNITY_PORT=8090
 INFLUXDB_PORT=8086
 MQTT_PORT=1883
 
-# --- credentials (users: grafana admin, ditto ditto/devops, influxdb admin) -
+# --- credentials (grafana admin, ditto ditto/devops, influxdb admin, mqtt) -
 GRAFANA_ADMIN_PASSWORD=$(rand)
 DITTO_PASSWORD=${ditto_password}
 DITTO_DEVOPS_PASSWORD=${devops_password}
@@ -52,6 +85,18 @@ DITTO_BASIC_AUTH=$(b64 "ditto:${ditto_password}")
 DITTO_DEVOPS_BASIC_AUTH=$(b64 "devops:${devops_password}")
 INFLUXDB_ADMIN_PASSWORD=$(rand)
 INFLUXDB_TOKEN=$(rand 40)
+
+# --- Production Profile (make up-prod) -------------------------------------
+# OPENEGIZ_DOMAIN: hostname served by Caddy (localhost or a public/private DNS
+# name). CADDY_TLS: 'internal' for Caddy's local CA (localhost/private hosts),
+# or an email address (e.g. ops@example.com) for automatic Let's Encrypt ACME.
+# For optional MQTTS on port 8883, place ca.crt, server.crt, and server.key in
+# deploy/compose/mosquitto/certs/ (or set MQTTS_CERTS_DIR) and set MQTTS_ENABLED=true.
 ENV
+
+for entry in "${PROD_DEFAULTS[@]}"; do
+  printf '%s\n' "$entry" >>"$ENV_FILE"
+done
+printf 'MQTT_PASSWORD=%s\n' "$(rand)" >>"$ENV_FILE"
 
 echo "Created $ENV_FILE with new random credentials."

@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /services/extended-api
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: pip
+    directory: /examples
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directories:
+      - /services/extended-api
+      - /packaging/grafana-plugins
+      - /examples/mine
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker-compose
+    directory: /deploy/compose
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: ghcr.io/openegiz-io/*
+
+  - package-ecosystem: helm
+    directory: /charts/openegiz
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: ghcr.io/openegiz-io/*
