@@ -132,10 +132,15 @@ check "InfluxDB datasource healthy" sh -c "curl -sf -u admin:$GRAFANA_ADMIN_PASS
 # plugin proxy, from inside the Grafana container.
 PROXY="$GRAFANA/api/plugin-proxy/ertis-opentwins-app"
 check_ditto "OpenEgiz app reaches Ditto (plugin proxy)" curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/ditto/api/2/search/things?option=size(1)"
-check "OpenEgiz app reaches the extended API (plugin proxy)" sh -c "curl -s -o /dev/null -w '%{http_code}' -u admin:$GRAFANA_ADMIN_PASSWORD $PROXY/extended/ | grep -qE '^[2-4][0-9][0-9]$'"
+# The real Extended API resources, exactly the routes the app's Twins, Types
+# and Policies pages call. A bare root check would pass even with the API
+# half-broken (express answers 404 on /).
+check_ditto "extended API twins via plugin proxy" curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/twins"
+check_ditto "extended API types via plugin proxy" curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/types"
+check_ditto "extended API policies via plugin proxy" curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/policies"
 
 echo "Extended API and Unity"
-check "extended API answers" sh -c "curl -s -o /dev/null -w '%{http_code}' http://$HOST:$EXTENDED_API_PORT/ | grep -qE '^[2-4][0-9][0-9]$'"
+check_ditto "extended API twins (direct port)" curl -sf "http://$HOST:$EXTENDED_API_PORT/api/twins"
 check "Unity file server serves build/" curl -sf -o /dev/null "http://$HOST:$UNITY_PORT/build/README.md"
 
 if "${COMPOSE[@]}" ps -a --format '{{.Service}}' 2>/dev/null | grep -qx mine-setup || \

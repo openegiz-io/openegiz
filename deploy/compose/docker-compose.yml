@@ -261,22 +261,17 @@ services:
       mosquitto:
         condition: service_healthy
 
-  # ------------------------------------------------- OpenTwins extended API
-  # Upstream sources carry no license file, so OpenEgiz never publishes an
-  # image of it: every install builds it locally from the pinned commit
-  # (same commit and Dockerfile as rebuild/extended-api/).
+  # ------------------------------------------------- OpenEgiz extended API
+  # First-party service, adopted from ertis-research/extended-api-for-eclipse-ditto
+  # (pinned commit b49663d) into services/extended-api/. Built from the
+  # monorepo: no external git clone at startup. CI publishes the multi-arch
+  # image to GHCR; the local build below is the development fallback.
   extended-api:
     build:
-      context: https://github.com/ertis-research/extended-api-for-eclipse-ditto.git#b49663dea326854a2323423eaeab7e7f54d325a7
-      dockerfile_inline: |
-        FROM node:20-slim
-        WORKDIR /usr/src/app
-        COPY package*.json yarn.lock ./
-        RUN yarn install --frozen-lockfile
-        COPY . .
-        EXPOSE 8080
-        CMD ["yarn", "start"]
-    image: openegiz/ditto-extended-api:local-b49663d
+      context: ../../services/extended-api
+    # EXTENDED_API_IMAGE pins a published image (e.g. a release tag); when
+    # unset, compose builds the local sources and tags them `:dev`.
+    image: ${EXTENDED_API_IMAGE:-ghcr.io/openegiz-io/extended-api:dev}
     restart: unless-stopped
     mem_limit: 512m
     environment:
@@ -289,6 +284,13 @@ services:
       DITTO_USERNAME_DEVOPS: devops
       DITTO_PASSWORD_DEVOPS: ${DITTO_DEVOPS_PASSWORD}
       ALL_LOGS: "false"
+      # Authentication is off by default: in both profiles only Grafana's
+      # plugin proxy (internal network) calls this API. Set
+      # EXTENDED_API_AUTH_ENABLED=true when exposing the port beyond it, and
+      # EXTENDED_API_AUTH_TOKEN to require a shared secret (see
+      # services/extended-api/src/middleware/auth.ts).
+      AUTH_ENABLED: ${EXTENDED_API_AUTH_ENABLED:-false}
+      AUTH_TOKEN: ${EXTENDED_API_AUTH_TOKEN:-}
     ports:
       - "${OPENEGIZ_BIND:-127.0.0.1}:${EXTENDED_API_PORT:-8085}:8080"
     depends_on:
