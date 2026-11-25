@@ -13,7 +13,7 @@
 
 # The pinned upstream lockfile (yarn.lock, carried over from
 # ertis-research/extended-api-for-eclipse-ditto) pins the dependency tree.
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /build
 COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile
@@ -22,7 +22,7 @@ COPY src ./src
 COPY docs ./docs
 RUN yarn build
 
-FROM node:22-alpine AS prod-deps
+FROM node:26-alpine AS prod-deps
 WORKDIR /deps
 COPY package.json yarn.lock ./
 # --ignore-optional skips the MongoDB driver's native extras (kerberos,
