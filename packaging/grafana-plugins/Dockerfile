@@ -18,7 +18,7 @@
 # and nothing in either stage is architecture-specific; build with
 # `docker buildx build --platform linux/amd64,linux/arm64`.
 
-FROM docker.io/library/python:3.12-alpine AS patcher
+FROM docker.io/library/python:3.15-alpine AS patcher
 WORKDIR /src
 # plugin sources: upstream archives, patcher, and the logo it embeds
 COPY vendor/grafana-plugins vendor/grafana-plugins
