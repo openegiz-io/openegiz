@@ -36,6 +36,7 @@ Coming from v1.x? Follow the [migration guide](MIGRATION.md) to move Twins, Poli
 
 - [Architecture](docs/architecture.md) and [glossary](GLOSSARY.md)
 - [Docker Compose](docs/docker-compose.md) and [Kubernetes with Helm](docs/kubernetes.md)
+- [Offline Bundle and NAS backup](docs/offline-bundle.md)
 - [Security and hardening](docs/security.md) and [private vulnerability reporting](SECURITY.md)
 - [Twins and Telemetry](docs/twins-and-telemetry.md), [Reference Examples](examples/), and [3D Scenes](docs/3d-scenes.md)
 - [Documentation index](docs/README.md), [changelog](CHANGELOG.md), and [roadmap](ROADMAP.md)

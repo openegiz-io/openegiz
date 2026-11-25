@@ -36,6 +36,7 @@ make smoke
 
 - [Архитектура](docs/architecture.md) и [глоссарий](GLOSSARY.md)
 - [Docker Compose](docs/docker-compose.md) и [Kubernetes с Helm](docs/kubernetes.md)
+- [Автономное развёртывание и резервная копия на NAS](docs/offline-bundle.md)
 - [Безопасное развёртывание](docs/security.md) и [конфиденциальные сообщения об уязвимостях](SECURITY.md)
 - [Двойники и телеметрия](docs/twins-and-telemetry.md), [примеры](examples/) и [3D-сцены](docs/3d-scenes.md)
 - [Оглавление документации](docs/README.md), [история изменений](CHANGELOG.md) и [планы проекта](ROADMAP.md)

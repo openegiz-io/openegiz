@@ -37,4 +37,4 @@ For a Git tag `v<VERSION>`, artifact references use `<VERSION>` without the lead
 | Chart release asset | `openegiz-<VERSION>.tgz` |
 | Release asset checksums | `SHA256SUMS`, with the chart archive's filename and SHA-256 |
 
-The chart's version and app version both match `<VERSION>`. A matching Compose checkout uses the same first-party tags with `OPENEGIZ_RELEASE=<VERSION>`. Offline Bundle tooling can resolve the remaining pinned images from the release checkout's Compose configuration and packaged chart for each Deployment Profile. The separate [Offline Bundle work](https://github.com/openegiz-io/openegiz/issues/44) will capture those images and their digests alongside the chart and repository mirror.
+The chart's version and app version both match `<VERSION>`. A matching Compose checkout uses the same first-party tags with `OPENEGIZ_RELEASE=<VERSION>`. Use the [Offline Bundle guide](offline-bundle.md) to export the release's chart, repository mirror, and pinned Compose and Helm images with their digests. Verify restoration from the bundle with the runtime smoke checks before archiving a release to the NAS.

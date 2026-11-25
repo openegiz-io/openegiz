@@ -9,6 +9,7 @@ This file records notable changes to OpenEgiz. It follows [Keep a Changelog](htt
 - Production Profile for Compose with Caddy HTTPS, authenticated MQTT, and an optional MQTTS listener.
 - Self-contained Helm v3 chart with TLS Ingress support, externally managed credentials, and persistent storage for 3D Scenes.
 - Tag-driven releases with multi-architecture Extended API and Plugin Bundle images and an OCI Helm chart.
+- Checksum-verified Offline Bundle export and restore for Docker, containerd, and k3s.
 - Example Mine and Example Oven Reference Examples, plus English deployment, security, and migration guides.
 
 ### Changed

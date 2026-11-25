@@ -7,6 +7,7 @@ Start with the [quick start](../README.md#quick-start-docker-compose). Use the g
 | [Architecture](architecture.md) | How Telemetry, Twin state, history, Grafana, and 3D Scenes fit together |
 | [Docker Compose](docker-compose.md) | Dev and Production Profiles, release images, HTTPS, and MQTTS |
 | [Kubernetes with Helm](kubernetes.md) | OCI installation, TLS Ingress, and upgrades |
+| [Offline Bundle and NAS backup](offline-bundle.md) | Export, verify, and restore OpenEgiz without an external registry |
 | [Security and hardening](security.md) | Network boundaries, credentials, and Extended API authentication |
 | [Twins and Telemetry](twins-and-telemetry.md) | Creating Twins and publishing and reading Telemetry |
 | [3D Scenes](3d-scenes.md) | Serving WebGL files and wiring Twin data into a panel |
