@@ -29,6 +29,8 @@ services:
     environment:
       MQTT_HOST: mosquitto
       MQTT_PORT: "1883"
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       SIM_SPEEDUP: ${SIM_SPEEDUP:-10}
     depends_on:
       mine-setup:

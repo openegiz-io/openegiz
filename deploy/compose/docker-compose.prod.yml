@@ -1,0 +1,92 @@
+# OpenEgiz — Docker Compose Production Profile overlay.
+#
+# Layered on top of deploy/compose/docker-compose.yml via `make up-prod`:
+# - Places Caddy in front as the single HTTPS/TLS entrypoint (Grafana on /,
+#   Eclipse Ditto HTTP/WS API on /ditto/*, 3D Scene server on /build/*).
+# - Disables anonymous MQTT and requires generated MQTT_USERNAME / MQTT_PASSWORD
+#   across Mosquitto, Ditto connectivity, Telegraf, and Reference Examples.
+# - Unpublishes host ports for MongoDB (already internal), InfluxDB, Extended API,
+#   Grafana, Ditto nginx, and the 3D Scene server so storage and backend APIs
+#   remain strictly internal to the container network.
+
+services:
+  caddy:
+    image: docker.io/library/caddy:2.11.9-alpine
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      OPENEGIZ_DOMAIN: ${OPENEGIZ_DOMAIN:-localhost}
+      CADDY_TLS: ${CADDY_TLS:-internal}
+    ports:
+      - "${OPENEGIZ_PROD_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"
+      - "${OPENEGIZ_PROD_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      grafana:
+        condition: service_healthy
+      ditto-nginx:
+        condition: service_healthy
+      unity:
+        condition: service_started
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  influxdb:
+    ports: !reset []
+
+  mosquitto:
+    entrypoint: ["/bin/sh", "/mosquitto/config/entrypoint-prod.sh"]
+    command: []
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:?run make up-prod to generate .env}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?run make up-prod to generate .env}
+      MQTTS_ENABLED: ${MQTTS_ENABLED:-false}
+    ports: !override
+      - "${OPENEGIZ_PROD_BIND:-0.0.0.0}:${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.prod.conf:ro
+      - ./mosquitto/entrypoint-prod.sh:/mosquitto/config/entrypoint-prod.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -u \"$$MQTT_USERNAME\" -P \"$$MQTT_PASSWORD\" -t '$$SYS/broker/version' -C 1 -W 5 >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+
+  telegraf:
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:?run make up-prod to generate .env}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?run make up-prod to generate .env}
+
+  ditto-nginx:
+    ports: !reset []
+
+  init:
+    environment:
+      MQTT_AUTH_ENABLED: "true"
+      MQTT_USERNAME: ${MQTT_USERNAME:?run make up-prod to generate .env}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?run make up-prod to generate .env}
+
+  extended-api:
+    ports: !reset []
+
+  grafana:
+    environment:
+      GF_SERVER_DOMAIN: ${OPENEGIZ_DOMAIN:-localhost}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://%(domain)s/}
+      GF_SECURITY_COOKIE_SECURE: "true"
+    ports: !reset []
+
+  unity:
+    ports: !reset []
+
+volumes:
+  caddy-data:
+  caddy-config:

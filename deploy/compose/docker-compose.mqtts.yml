@@ -1,0 +1,14 @@
+# OpenEgiz — Optional MQTTS (TLS on port 8883) overlay for the Production Profile.
+#
+# Place ca.crt, server.crt, and server.key in deploy/compose/mosquitto/certs/
+# (or set MQTTS_CERTS_DIR in deploy/compose/.env), then set MQTTS_ENABLED=true
+# and run `make up-prod`.
+
+services:
+  mosquitto:
+    environment:
+      MQTTS_ENABLED: "true"
+    ports:
+      - "${OPENEGIZ_PROD_BIND:-0.0.0.0}:${MQTTS_PORT:-8883}:8883"
+    volumes:
+      - "${MQTTS_CERTS_DIR:-./mosquitto/certs}:/mosquitto/certs:ro"

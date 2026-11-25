@@ -46,16 +46,52 @@ make smoke          # сквозная проверка: MQTT -> Ditto -> Telegr
 
 | Команда | Что делает |
 |---|---|
-| `make up` | Запустить платформу (при первом запуске — сгенерировать пароли в `deploy/compose/.env`) |
-| `make example-mine` | Запустить платформу и Пример рудника; после этого `make up` / `make down` поднимают и останавливают рудник вместе с платформой |
+| `make up` | Запустить **Dev Profile** (локально `127.0.0.1`, автогенерация паролей в `deploy/compose/.env`) |
+| `make up-prod` | Запустить **Production Profile** (Caddy HTTPS, аутентифицированный MQTT, внутренние БД и Extended API) |
+| `make example-mine` | Запустить платформу и Пример рудника; после этого `make up` / `make up-prod` / `make down` включают рудник вместе с платформой |
 | `make example-mine-stop` | Остановить симулятор рудника; двойники и данные остаются |
-| `make smoke` | Сквозная проверка работающего стенда |
+| `make smoke` | Сквозная проверка работающего стенда (Dev или Production Profile) |
 | `make ps` / `make logs S=<сервис>` | Статус сервисов / логи |
-| `make generate-data` | Демо с печами: два двойника печей с имитацией телеметрии ([examples/oven/](examples/oven/)) |
+| `make generate-data` | Пример с печами: два двойника печей с имитацией телеметрии ([examples/oven/](examples/oven/)) |
 | `make down` | Остановить, данные сохранить |
 | `make clean` | Остановить и **удалить все данные и пароли** |
 
-Пароли генерируются один раз на каждую копию репозитория и лежат в `deploy/compose/.env` (в git не попадает). Паролей по умолчанию нет. Порты слушают только `127.0.0.1`.
+Пароли генерируются один раз на каждую копию репозитория и лежат в `deploy/compose/.env` (в git не попадает). Паролей по умолчанию нет. В **Dev Profile** порты слушают только `127.0.0.1`.
+
+### Production Profile (HTTPS, аутентификация MQTT, закрытые порты БД и Extended API)
+
+Для серверов и общих сетей используйте **Production Profile** (требуется Docker Compose v2.24.4+):
+
+```bash
+make up-prod
+make smoke
+```
+
+Production Profile подключает оверлей [deploy/compose/docker-compose.prod.yml](deploy/compose/docker-compose.prod.yml) поверх базового стека:
+
+- **Единая HTTPS-точка входа через Caddy** (`HTTP_PORT=80`, `HTTPS_PORT=443` на `OPENEGIZ_PROD_BIND=0.0.0.0`):
+  - `https://<OPENEGIZ_DOMAIN>/` → Grafana UI, API и plugin proxy
+  - `https://<OPENEGIZ_DOMAIN>/ditto/api/2` и `wss://<OPENEGIZ_DOMAIN>/ditto/ws/2` → Eclipse Ditto HTTP/WebSocket API
+  - `https://<OPENEGIZ_DOMAIN>/build/<file>` → сервер 3D-сцен (Unity WebGL)
+- **Автоматический или внутренний TLS** настраивается в `deploy/compose/.env`:
+  - Приватные хосты / `localhost` (по умолчанию): `OPENEGIZ_DOMAIN=localhost`, `CADDY_TLS=internal` (встроенный локальный CA Caddy).
+  - Публичные домены: задайте `OPENEGIZ_DOMAIN=twins.example.com` и `CADDY_TLS=ops@example.com` для автоматического выпуска сертификатов Let's Encrypt (ACME).
+- **Аутентифицированный MQTT**: анонимный доступ отключён (`allow_anonymous false`). Сгенерированные `MQTT_USERNAME` / `MQTT_PASSWORD` из `deploy/compose/.env` автоматически передаются в Mosquitto, Eclipse Ditto connectivity, Telegraf и примеры (`--mqtt-username` / `--mqtt-password`).
+- **Хранилища и бэкенд-API только во внутренней сети**: MongoDB, InfluxDB, Extended API, Grafana, Ditto nginx и сервер 3D-сцен не публикуют ни одного порта на хосте; Grafana обращается к Ditto и Extended API через plugin proxy внутри Docker-сети.
+
+#### Опциональный MQTTS (TLS на порту 8883)
+
+Чтобы включить шифрованный MQTT на порту `8883`:
+
+1. Положите CA-сертификат, сертификат сервера и приватный ключ в `deploy/compose/mosquitto/certs/` (игнорируется git) под именами `ca.crt`, `server.crt` и `server.key` (или укажите `MQTTS_CERTS_DIR` в `deploy/compose/.env`).
+2. Задайте `MQTTS_ENABLED=true` в `deploy/compose/.env` (при необходимости измените `MQTTS_PORT=8883`).
+3. Выполните `make up-prod` (автоматически подключится оверлей [deploy/compose/docker-compose.mqtts.yml](deploy/compose/docker-compose.mqtts.yml)).
+4. Подключайте примеры и внешние MQTT-клиенты с флагами TLS, например:
+   ```bash
+   python3 examples/oven/data_generator.py --mqtt-host <host> --mqtt-port 8883 \
+     --mqtt-username openegiz --mqtt-password <MQTT_PASSWORD> \
+     --mqtt-tls --mqtt-ca-certs deploy/compose/mosquitto/certs/ca.crt
+   ```
 
 ### Windows (WSL2)
 
@@ -128,7 +164,7 @@ Ditto обновляет двойник и публикует изменение
 | | Compose | Helm |
 |---|---|---|
 | Куда положить файлы | в `build/` (или `make copy-build SRC=<папка сборки Unity>`); отдаются сразу | `make copy-build SRC=…`, затем `make upload-build` |
-| URL файла | `http://localhost:8090/build/<файл>` | `https://<scene-ingress-host>/build/<файл>` (или через `kubectl port-forward`) |
+| URL файла | `http://localhost:8090/build/<файл>` (Prod: `https://<domain>/scenes/build/<файл>`) | `https://<scene-ingress-host>/build/<файл>` (или через `kubectl port-forward`) |
 | После перезапуска / обновления | на месте | сохраняются на `PersistentVolumeClaim` |
 
 Ссылайтесь на каждый файл напрямую: у самой `/build/` нет индекса, она отвечает 403. Эти URL загружает браузер зрителя, поэтому хост должен быть доступен из браузера.

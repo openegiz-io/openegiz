@@ -1,27 +1,50 @@
-.PHONY: up down ps logs smoke clean example-mine example-mine-stop install upgrade uninstall status endpoints upload-build generate-data copy-build unity-demo check-secrets helm-smoke lint
+.PHONY: up up-prod down ps logs smoke clean example-mine example-mine-stop install upgrade uninstall status endpoints upload-build generate-data copy-build unity-demo check-secrets helm-smoke lint
 
 # ---------------------------------------------------------------------------
-# Docker Compose deployment (local development and CI): deploy/compose/
+# Docker Compose deployment (local development, production, and CI): deploy/compose/
 # ---------------------------------------------------------------------------
 COMPOSE_BASE := docker compose -f deploy/compose/docker-compose.yml
+# Once `make up-prod` has run, compose commands include the Production Profile
+# overlay (Caddy HTTPS, MQTT auth, internal-only storage/API). `make up` or
+# `make clean` clears it.
+PROD_MARKER   := deploy/compose/.prod
+PROD_COMPOSE  := deploy/compose/docker-compose.prod.yml
+MQTTS_COMPOSE := deploy/compose/docker-compose.mqtts.yml
+MQTTS_ACTIVE  := $(if $(filter true,$(MQTTS_ENABLED)),yes,$(if $(filter false,$(MQTTS_ENABLED)),,$(shell grep -qE '^MQTTS_ENABLED=true$$' deploy/compose/.env 2>/dev/null && echo yes)))
 # Once `make example-mine` has run, every compose command also loads the mine
 # overlay, so `down` stops its simulator and `up` keeps its Grafana dashboard.
 # `make clean` forgets it.
 MINE_MARKER  := deploy/compose/.example-mine
 MINE_COMPOSE := examples/mine/compose.yml
-COMPOSE := $(COMPOSE_BASE)$(if $(wildcard $(MINE_MARKER)), -f $(MINE_COMPOSE))
+COMPOSE_PROD_BASE   := $(COMPOSE_BASE) -f $(PROD_COMPOSE)$(if $(MQTTS_ACTIVE), -f $(MQTTS_COMPOSE))
+COMPOSE_ACTIVE_BASE := $(if $(wildcard $(PROD_MARKER)),$(COMPOSE_PROD_BASE),$(COMPOSE_BASE))
+COMPOSE_DEV         := $(COMPOSE_BASE)$(if $(wildcard $(MINE_MARKER)), -f $(MINE_COMPOSE))
+COMPOSE_PROD        := $(COMPOSE_PROD_BASE)$(if $(wildcard $(MINE_MARKER)), -f $(MINE_COMPOSE))
+COMPOSE             := $(if $(wildcard $(PROD_MARKER)),$(COMPOSE_PROD),$(COMPOSE_DEV))
 
-## Start the whole platform with Docker Compose (first run: generates credentials)
+## Start the Dev Profile with Docker Compose (first run: generates credentials)
 up:
+	@rm -f $(PROD_MARKER)
 	@bash scripts/compose-env.sh
 	@bash scripts/compose-preflight.sh
-	$(COMPOSE) up -d --build --wait --wait-timeout 900
+	$(COMPOSE_DEV) up -d --build --remove-orphans --wait --wait-timeout 900
 	@# `--wait` does not wait for one-shot jobs to finish: a running init counts
 	@# as up. Wait for it to exit, then check how.
-	@test "$$(docker wait $$($(COMPOSE) ps -a -q init))" = 0 || { \
-	  echo "ERROR: the init job (policy + Ditto connections) failed:"; $(COMPOSE) logs init; exit 1; }
+	@test "$$(docker wait $$($(COMPOSE_DEV) ps -a -q init))" = 0 || { \
+	  echo "ERROR: the init job (policy + Ditto connections) failed:"; $(COMPOSE_DEV) logs init; exit 1; }
 	@bash scripts/compose-wait-ready.sh
 	@bash scripts/compose-urls.sh
+
+## Start the Production Profile with Caddy HTTPS, MQTT auth, and internal-only storage/API
+up-prod:
+	@bash scripts/compose-env.sh
+	@bash scripts/compose-preflight.sh --prod
+	$(COMPOSE_PROD) up -d --build --remove-orphans --wait --wait-timeout 900
+	@test "$$(docker wait $$($(COMPOSE_PROD) ps -a -q init))" = 0 || { \
+	  echo "ERROR: the init job (policy + Ditto connections) failed:"; $(COMPOSE_PROD) logs init; exit 1; }
+	@touch $(PROD_MARKER)
+	@bash scripts/compose-wait-ready.sh --prod
+	@bash scripts/compose-urls.sh --prod
 
 ## Stop the platform, keep data
 down:
@@ -35,24 +58,24 @@ ps:
 logs:
 	$(COMPOSE) logs -f --tail=100 $(S)
 
-## End-to-end check of the running compose stack
+## End-to-end check of the running compose stack (Dev or Production Profile)
 smoke:
 	@bash scripts/compose-smoke.sh
 
 ## Run the Example Mine (twins + haul-cycle simulator + Grafana dashboard) on the compose stack
-example-mine: up
-	$(COMPOSE_BASE) -f $(MINE_COMPOSE) up -d --build --wait --wait-timeout 300
+example-mine: $(if $(wildcard $(PROD_MARKER)),up-prod,up)
+	$(COMPOSE_ACTIVE_BASE) -f $(MINE_COMPOSE) up -d --build --wait --wait-timeout 300
 	@touch $(MINE_MARKER)
 	@echo "Example Mine running: Grafana -> Dashboards -> OpenEgiz Examples -> Example Mine"
 
 ## Stop the Example Mine simulator (twins and data stay)
 example-mine-stop:
-	$(COMPOSE_BASE) -f $(MINE_COMPOSE) stop mine-simulator
+	$(COMPOSE_ACTIVE_BASE) -f $(MINE_COMPOSE) stop mine-simulator
 
 ## Stop the platform and DELETE all its data and credentials
 clean:
-	$(COMPOSE) down -v --remove-orphans
-	rm -f deploy/compose/.env $(MINE_MARKER)
+	docker compose -p openegiz down -v --remove-orphans
+	rm -f deploy/compose/.env $(MINE_MARKER) $(PROD_MARKER)
 
 # ---------------------------------------------------------------------------
 # Helm v3 deployment (Kubernetes): charts/openegiz
@@ -138,9 +161,14 @@ lint:
 	python3 packaging/grafana-plugins/verify_bundle.py
 	@bash scripts/compose-env.sh
 	docker compose -f deploy/compose/docker-compose.yml config -q
+	docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml config -q
+	docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml -f deploy/compose/docker-compose.mqtts.yml config -q
+	python3 scripts/check-compose-profiles.py
+	python3 scripts/test-compose-prod-cli.py
 	@# Every compose image must be pinned to an exact x.y.z version (no
 	@# :latest, no floating major.minor tags).
-	@bash scripts/compose-pinned-images.sh
+	@bash scripts/compose-pinned-images.sh deploy/compose/docker-compose.yml
+	@bash scripts/compose-pinned-images.sh deploy/compose/docker-compose.prod.yml
 	@# Extended API (services/extended-api/): TypeScript must compile and its
 	@# stack-independent unit tests (auth middleware) must pass. Needs node/yarn.
 	command -v node >/dev/null || { echo "ERROR: lint: node is required to check services/extended-api"; exit 1; }

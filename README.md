@@ -46,16 +46,52 @@ Open Grafana → **Dashboards → OpenEgiz Examples → Example Mine**. The twin
 
 | Command | What it does |
 |---|---|
-| `make up` | Start the platform (first run: generate credentials into `deploy/compose/.env`) |
-| `make example-mine` | Start the platform plus the Example Mine; from then on `make up` / `make down` include the mine too |
+| `make up` | Start the **Dev Profile** (localhost `127.0.0.1`, auto-generated credentials in `deploy/compose/.env`) |
+| `make up-prod` | Start the **Production Profile** (Caddy HTTPS, authenticated MQTT, internal-only storage and Extended API) |
+| `make example-mine` | Start the platform plus the Example Mine; from then on `make up` / `make up-prod` / `make down` include the mine too |
 | `make example-mine-stop` | Stop the mine simulator; twins and data stay |
-| `make smoke` | End-to-end check of the running stack |
+| `make smoke` | End-to-end check of the running stack (Dev or Production Profile) |
 | `make ps` / `make logs S=<service>` | Service status / follow logs |
-| `make generate-data` | Oven demo: two oven twins with simulated telemetry ([examples/oven/](examples/oven/)) |
+| `make generate-data` | Oven Reference Example: two oven twins with simulated telemetry ([examples/oven/](examples/oven/)) |
 | `make down` | Stop, keep data |
 | `make clean` | Stop and **delete all data and credentials** |
 
-Credentials are generated once per checkout and live in `deploy/compose/.env` (git-ignored). There are no default passwords. Ports are bound to `127.0.0.1` only.
+Credentials are generated once per checkout and live in `deploy/compose/.env` (git-ignored). There are no default passwords. In the **Dev Profile**, ports are bound to `127.0.0.1` only.
+
+### Production Profile (HTTPS, MQTT Auth, Internal-Only Storage/API)
+
+For servers and shared networks, run the **Production Profile** (requires Docker Compose v2.24.4+):
+
+```bash
+make up-prod
+make smoke
+```
+
+The Production Profile layers [deploy/compose/docker-compose.prod.yml](deploy/compose/docker-compose.prod.yml) on top of the base stack:
+
+- **Single HTTPS entrypoint via Caddy** (`HTTP_PORT=80`, `HTTPS_PORT=443` on `OPENEGIZ_PROD_BIND=0.0.0.0`):
+  - `https://<OPENEGIZ_DOMAIN>/` → Grafana UI, API, and plugin proxy
+  - `https://<OPENEGIZ_DOMAIN>/ditto/api/2` & `wss://<OPENEGIZ_DOMAIN>/ditto/ws/2` → Eclipse Ditto HTTP/WebSocket API
+  - `https://<OPENEGIZ_DOMAIN>/build/<file>` → 3D Scene (Unity WebGL) server
+- **Automatic or internal TLS** controlled in `deploy/compose/.env`:
+  - Private hosts / `localhost` (default): `OPENEGIZ_DOMAIN=localhost`, `CADDY_TLS=internal` (Caddy's built-in local CA).
+  - Public domains: set `OPENEGIZ_DOMAIN=twins.example.com` and `CADDY_TLS=ops@example.com` for automatic Let's Encrypt ACME certificates.
+- **Authenticated MQTT**: anonymous access is disabled (`allow_anonymous false`). Generated `MQTT_USERNAME` / `MQTT_PASSWORD` from `deploy/compose/.env` are wired automatically into Mosquitto, Eclipse Ditto connectivity, Telegraf, and the Reference Examples (`--mqtt-username` / `--mqtt-password`).
+- **Internal-only storage and backend APIs**: MongoDB, InfluxDB, Extended API, Grafana, Ditto nginx, and the 3D Scene server publish **zero host ports**; Grafana's plugin proxy reaches Ditto and the Extended API strictly over the private container network.
+
+#### Optional MQTTS (TLS on port 8883)
+
+To enable encrypted MQTT on port `8883` alongside authenticated MQTT:
+
+1. Place your CA certificate, server certificate, and private key in `deploy/compose/mosquitto/certs/` (git-ignored) as `ca.crt`, `server.crt`, and `server.key` (or point `MQTTS_CERTS_DIR` in `deploy/compose/.env` to another directory).
+2. Set `MQTTS_ENABLED=true` in `deploy/compose/.env` (optionally customize `MQTTS_PORT=8883`).
+3. Run `make up-prod` (this automatically layers [deploy/compose/docker-compose.mqtts.yml](deploy/compose/docker-compose.mqtts.yml)).
+4. Connect Reference Examples or external MQTT clients with TLS flags, e.g.:
+   ```bash
+   python3 examples/oven/data_generator.py --mqtt-host <host> --mqtt-port 8883 \
+     --mqtt-username openegiz --mqtt-password <MQTT_PASSWORD> \
+     --mqtt-tls --mqtt-ca-certs deploy/compose/mosquitto/certs/ca.crt
+   ```
 
 ### Windows (WSL2)
 
@@ -128,7 +164,7 @@ The repository ships no scene, so clones stay small: `make unity-demo` downloads
 | | Compose | Helm |
 |---|---|---|
 | Put the files | into `build/` (or `make copy-build SRC=<Unity output dir>`); served immediately | `make copy-build SRC=…`, then `make upload-build` |
-| File URL | `http://localhost:8090/build/<file>` | `https://<scene-ingress-host>/build/<file>` (or via `kubectl port-forward`) |
+| File URL | `http://localhost:8090/build/<file>` (Prod: `https://<domain>/scenes/build/<file>`) | `https://<scene-ingress-host>/build/<file>` (or via `kubectl port-forward`) |
 | After a restart / upgrade | still there | persisted on a `PersistentVolumeClaim` |
 
 Link each file directly: `/build/` itself has no index and returns 403. The viewer's browser fetches these URLs, so the host must be reachable from it.

@@ -23,9 +23,8 @@ import os
 import random
 import signal
 import sys
+import threading
 import time
-
-import paho.mqtt.client as mqtt
 
 NAMESPACE = "org.openegiz.mine"
 TOPIC_PREFIX = "telemetry"
@@ -195,10 +194,22 @@ def ditto_modify_features(name, features):
     }
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--mqtt-host", default=os.environ.get("MQTT_HOST", "localhost"))
     p.add_argument("--mqtt-port", type=int, default=int(os.environ.get("MQTT_PORT", "1883")))
+    p.add_argument("--mqtt-username", default=os.environ.get("MQTT_USERNAME", ""),
+                   help="MQTT username for authenticated brokers (env: MQTT_USERNAME)")
+    p.add_argument("--mqtt-password", default=os.environ.get("MQTT_PASSWORD", ""),
+                   help="MQTT password for authenticated brokers (env: MQTT_PASSWORD)")
+    p.add_argument("--mqtt-tls", action="store_true", default=_env_flag("MQTT_TLS"),
+                   help="enable TLS / MQTTS when connecting to the broker (env: MQTT_TLS=true)")
+    p.add_argument("--mqtt-ca-certs", default=os.environ.get("MQTT_CA_CERTS", ""),
+                   help="path to CA bundle for MQTTS verification (env: MQTT_CA_CERTS)")
     p.add_argument("--interval", type=float, default=float(os.environ.get("SIM_INTERVAL", "2")),
                    help="real seconds between publishes (default 2)")
     p.add_argument("--speedup", type=float, default=float(os.environ.get("SIM_SPEEDUP", "10")),
@@ -213,7 +224,25 @@ def main():
 
     client = None
     if not args.dry_run:
+        import paho.mqtt.client as mqtt
+
+        connected = threading.Event()
+        connect_error = []
+
+        def on_connect(_client, _userdata, _flags, reason_code, _properties=None):
+            ok = reason_code == 0 or (hasattr(reason_code, "value") and reason_code.value == 0)
+            if ok:
+                connected.set()
+            else:
+                connect_error.append(reason_code)
+                connected.set()
+
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"openegiz-mine-sim-{os.getpid()}")
+        client.on_connect = on_connect
+        if args.mqtt_username:
+            client.username_pw_set(args.mqtt_username, args.mqtt_password)
+        if args.mqtt_tls:
+            client.tls_set(ca_certs=args.mqtt_ca_certs or None)
         for attempt in range(30):
             try:
                 client.connect(args.mqtt_host, args.mqtt_port, keepalive=30)
@@ -225,8 +254,15 @@ def main():
             log.error("giving up on MQTT %s:%s", args.mqtt_host, args.mqtt_port)
             return 1
         client.loop_start()
-        log.info("publishing to mqtt://%s:%s every %.1fs at %.0fx speed",
-                 args.mqtt_host, args.mqtt_port, args.interval, args.speedup)
+        if not connected.wait(timeout=15) or connect_error:
+            log.error("MQTT authentication/connection failed for %s:%s: %s",
+                      args.mqtt_host, args.mqtt_port, connect_error or "timeout")
+            client.loop_stop()
+            client.disconnect()
+            return 1
+        scheme = "mqtts" if args.mqtt_tls else "mqtt"
+        log.info("publishing to %s://%s:%s every %.1fs at %.0fx speed",
+                 scheme, args.mqtt_host, args.mqtt_port, args.interval, args.speedup)
 
     stop = False
 

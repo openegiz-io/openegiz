@@ -12,6 +12,10 @@ CREDENTIALS.md
 deploy/compose/.env
 # Set by `make example-mine`: compose commands then include the mine overlay
 deploy/compose/.example-mine
+# Set by `make up-prod`: compose commands then include the Production Profile overlay
+deploy/compose/.prod
+# Optional MQTTS certificates for Mosquitto (private keys must never be committed)
+deploy/compose/mosquitto/certs/
 
 # services/extended-api build artifacts
 services/extended-api/node_modules/

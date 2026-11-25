@@ -7,6 +7,7 @@ Ditto protocol. Features: voltage_v, current_a, active_power_kw, power_factor.
 """
 
 import argparse
+from dataclasses import dataclass
 import json
 import math
 import os
@@ -15,8 +16,6 @@ import signal
 import sys
 import time
 from datetime import datetime, timezone
-
-import paho.mqtt.client as mqtt
 
 
 # ── Default configuration ────────────────────────────────────────────
@@ -108,12 +107,24 @@ def build_ditto_message(thing_id: str, features: dict) -> dict:
 
 # ── MQTT publisher ───────────────────────────────────────────────────
 
+@dataclass(frozen=True)
+class MqttConfig:
+    host: str
+    port: int
+    username: str = ""
+    password: str = ""
+    tls: bool = False
+    ca_certs: str = ""
+
+
 class MqttPublisher:
     """Publishes Ditto protocol messages to Mosquitto."""
 
-    def __init__(self, host: str, port: int, thing_id: str):
-        self.host = host
-        self.port = port
+    def __init__(self, config: MqttConfig, thing_id: str):
+        import paho.mqtt.client as mqtt
+
+        self.host = config.host
+        self.port = config.port
         self.thing_id = thing_id
         # MQTT topic that Ditto's mosquitto-source-connection listens on
         self.topic = f"telemetry/{thing_id}"
@@ -123,6 +134,10 @@ class MqttPublisher:
             client_id=f"openegiz-oven-sim-{os.getpid()}-{random.randint(1000, 9999)}",
             protocol=mqtt.MQTTv5,
         )
+        if config.username:
+            self.client.username_pw_set(config.username, config.password)
+        if config.tls:
+            self.client.tls_set(ca_certs=config.ca_certs or None)
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
         self.connected = False
@@ -188,6 +203,27 @@ Examples:
         help=f"MQTT broker port (default: {DEFAULT_MQTT_PORT})",
     )
     parser.add_argument(
+        "--mqtt-username",
+        default=os.environ.get("MQTT_USERNAME", ""),
+        help="MQTT username for authenticated brokers (env: MQTT_USERNAME)",
+    )
+    parser.add_argument(
+        "--mqtt-password",
+        default=os.environ.get("MQTT_PASSWORD", ""),
+        help="MQTT password for authenticated brokers (env: MQTT_PASSWORD)",
+    )
+    parser.add_argument(
+        "--mqtt-tls",
+        action="store_true",
+        default=os.environ.get("MQTT_TLS", "").strip().lower() in ("1", "true", "yes"),
+        help="enable TLS / MQTTS when connecting to the broker (env: MQTT_TLS=true)",
+    )
+    parser.add_argument(
+        "--mqtt-ca-certs",
+        default=os.environ.get("MQTT_CA_CERTS", ""),
+        help="path to CA bundle for MQTTS verification (env: MQTT_CA_CERTS)",
+    )
+    parser.add_argument(
         "--thing-ids",
         nargs="+",
         default=DEFAULT_THING_IDS,
@@ -208,10 +244,18 @@ Examples:
 
     args = parser.parse_args()
 
+    mqtt_cfg = MqttConfig(
+        host=args.mqtt_host,
+        port=args.mqtt_port,
+        username=args.mqtt_username,
+        password=args.mqtt_password,
+        tls=args.mqtt_tls,
+        ca_certs=args.mqtt_ca_certs,
+    )
     twins = []
     for thing_id in args.thing_ids:
         sim = OvenSimulator()
-        pub = MqttPublisher(args.mqtt_host, args.mqtt_port, thing_id)
+        pub = MqttPublisher(mqtt_cfg, thing_id)
         twins.append({"id": thing_id, "simulator": sim, "publisher": pub})
 
     running = True

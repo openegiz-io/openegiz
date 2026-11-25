@@ -19,7 +19,7 @@ jobs:
         run: make lint
 
   compose-e2e:
-    name: compose e2e (${{ matrix.runner }})
+    name: compose dev e2e (${{ matrix.runner }})
     needs: lint
     strategy:
       fail-fast: false
@@ -50,6 +50,69 @@ jobs:
         run: |
           docker compose -f deploy/compose/docker-compose.yml ps -a
           docker compose -f deploy/compose/docker-compose.yml logs --no-color --tail=200
+
+  compose-prod-e2e:
+    name: compose prod e2e (${{ matrix.runner }})
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: make up-prod
+        run: make up-prod
+      - name: make smoke (Production Profile)
+        run: make smoke
+      - name: Example Mine on top of Production Profile, smoke again
+        run: |
+          make example-mine
+          make smoke
+      - name: Restart preserves Production Profile and Example Mine
+        run: |
+          make down
+          make up-prod
+          make smoke
+      - name: Verify optional MQTTS listener (port 8883)
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/compose/mosquitto/certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=OpenEgiz-CI-CA" \
+            -keyout deploy/compose/mosquitto/certs/ca.key \
+            -out deploy/compose/mosquitto/certs/ca.crt 2>/dev/null
+          openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" \
+            -keyout deploy/compose/mosquitto/certs/server.key \
+            -out deploy/compose/mosquitto/certs/server.csr 2>/dev/null
+          openssl x509 -req -in deploy/compose/mosquitto/certs/server.csr \
+            -CA deploy/compose/mosquitto/certs/ca.crt -CAkey deploy/compose/mosquitto/certs/ca.key -CAcreateserial \
+            -out deploy/compose/mosquitto/certs/server.crt -days 1 \
+            -extfile <(printf "subjectAltName=DNS:localhost,DNS:mosquitto,IP:127.0.0.1\n") 2>/dev/null
+          chmod 644 deploy/compose/mosquitto/certs/ca.crt deploy/compose/mosquitto/certs/server.crt deploy/compose/mosquitto/certs/server.key
+          rm -f deploy/compose/mosquitto/certs/ca.key deploy/compose/mosquitto/certs/server.csr deploy/compose/mosquitto/certs/ca.srl
+          sed -i 's/^MQTTS_ENABLED=.*/MQTTS_ENABLED=true/' deploy/compose/.env
+          make up-prod
+          set -a; . deploy/compose/.env; set +a
+          out="$(docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml -f deploy/compose/docker-compose.mqtts.yml \
+            exec -T mosquitto mosquitto_pub -h localhost -p 8883 --cafile /mosquitto/certs/ca.crt -t telemetry/mqtts-anon -m '{}' 2>&1)" && rc=0 || rc=$?
+          test "$rc" -ne 0 && printf '%s' "$out" | grep -qi 'not authori'
+          docker run --rm --network openegiz_default \
+            -v "$PWD/examples/oven:/oven:ro" \
+            -v "$PWD/deploy/compose/mosquitto/certs:/certs:ro" \
+            openegiz/example-mine:local python /oven/data_generator.py \
+            --mqtt-host mosquitto --mqtt-port 8883 \
+            --mqtt-username "$MQTT_USERNAME" --mqtt-password "$MQTT_PASSWORD" \
+            --mqtt-tls --mqtt-ca-certs /certs/ca.crt --steps 1
+          make smoke
+      - name: Memory actually used
+        if: always()
+        run: docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}'
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml ps -a
+          docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml logs --no-color --tail=200
 
   helm-e2e:
     name: helm e2e (kind)

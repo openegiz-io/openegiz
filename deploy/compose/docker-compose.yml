@@ -150,6 +150,8 @@ services:
     mem_limit: 256m
     environment:
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN}
+      MQTT_USERNAME: ""
+      MQTT_PASSWORD: ""
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     depends_on:
