@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to simulate (no publication)
+        required: true
+        default: v2.0.0-rc.1
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'openegiz-io/openegiz'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      packages: write
+    env:
+      REGISTRY: ghcr.io/openegiz-io
+      PUBLISH: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Resolve release version
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          number='(0|[1-9][0-9]*)'
+          identifier="($number|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+          version="${TAG#v}"
+          if ! [[ "$TAG" =~ ^v$number\.$number\.$number(-$identifier(\.$identifier)*)?$ ]] || (( ${#version} > 128 )); then
+            echo "Expected vMAJOR.MINOR.PATCH or a SemVer prerelease with a valid Docker tag" >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Check for an existing GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>&1)"; then
+            if [ "$draft" != true ]; then
+              echo "Release $GITHUB_REF_NAME is already published. Use a fresh version." >&2
+              exit 1
+            fi
+            echo "RELEASE_DRAFT=true" >> "$GITHUB_ENV"
+          elif [ "$draft" != 'release not found' ]; then
+            printf '%s\n' "$draft" >&2
+            exit 1
+          fi
+      - uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
+        with:
+          version: v3.20.2
+      - name: Package and verify Helm chart
+        run: |
+          bash scripts/package-release-chart.sh "$VERSION" dist
+          (cd dist && sha256sum "openegiz-$VERSION.tgz" > SHA256SUMS)
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and verify multi-architecture images
+        run: |
+          build_image() {
+            local name="$1"
+            shift
+            local image="$REGISTRY/$name:$VERSION"
+            local archive="$RUNNER_TEMP/$name.tar"
+            local output=(--push)
+            if [ "$PUBLISH" = false ]; then
+              output=(--output "type=oci,dest=$archive")
+            fi
+            docker buildx build --platform linux/amd64,linux/arm64 \
+              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.version=$VERSION" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --tag "$image" "${output[@]}" "$@"
+
+            local index
+            if [ "$PUBLISH" = true ]; then
+              index="$(docker buildx imagetools inspect --raw "$image")"
+            else
+              local digest
+              digest="$(tar -xOf "$archive" index.json | jq -er '.manifests[0].digest')"
+              index="$(tar -xOf "$archive" "blobs/${digest/:/\/}")"
+            fi
+            jq -e '[.manifests[].platform | select(.os == "linux") | .architecture]
+              | sort == ["amd64", "arm64"]' <<< "$index"
+          }
+          build_image extended-api services/extended-api
+          build_image grafana-plugins -f packaging/grafana-plugins/Dockerfile .
+      - name: Save chart and checksums for dry run
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: openegiz-${{ env.VERSION }}
+          path: dist/
+          if-no-files-found: error
+      - name: Publish and verify OCI Helm chart
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          helm push "dist/openegiz-$VERSION.tgz" "oci://$REGISTRY/charts"
+          helm pull "oci://$REGISTRY/charts/openegiz" --version "$VERSION" --destination "$RUNNER_TEMP"
+          (cd "$RUNNER_TEMP" && sha256sum --check "$GITHUB_WORKSPACE/dist/SHA256SUMS")
+      - name: Publish GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          args=()
+          if [[ "$VERSION" == *-* ]]; then
+            args+=(--prerelease --latest=false)
+          fi
+          if [ "${RELEASE_DRAFT:-false}" = false ]; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes \
+              --title "OpenEgiz $GITHUB_REF_NAME" "${args[@]}" \
+              --notes "Use the [deployment guides]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$GITHUB_REF_NAME/docs) for the Docker Compose and Helm artifacts. See the [changelog]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/CHANGELOG.md) for user-facing changes."
+          fi
+          gh release upload "$GITHUB_REF_NAME" "dist/openegiz-$VERSION.tgz" dist/SHA256SUMS --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false "${args[@]}"

@@ -5,7 +5,7 @@
 # Compose (default): ports and credentials come from deploy/compose/.env.
 #   Works with both the Dev Profile and the Production Profile (`make up-prod`).
 # Helm: pass them explicitly, e.g.
-#   make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=...
+#   make generate-data MQTT_PORT=11883 DITTO_URL=http://localhost:18080 DITTO_PASSWORD=...
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

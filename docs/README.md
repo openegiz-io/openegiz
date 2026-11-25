@@ -1,10 +1,22 @@
 # OpenEgiz Documentation
 
-**New here?** Start with the [Quick start in the root README](../README.md#quick-start-docker-compose): `make up`, then `make example-mine`. To model your own Twins, see the two [Reference Examples](../examples/README.md).
+Start with the [quick start](../README.md#quick-start-docker-compose). Use the guides below to deploy OpenEgiz and work with Twins.
+
+| Guide | What it covers |
+|---|---|
+| [Architecture](architecture.md) | How Telemetry, Twin state, history, Grafana, and 3D Scenes fit together |
+| [Docker Compose](docker-compose.md) | Dev and Production Profiles, release images, HTTPS, and MQTTS |
+| [Kubernetes with Helm](kubernetes.md) | OCI installation, TLS Ingress, and upgrades |
+| [Security and hardening](security.md) | Network boundaries, credentials, and Extended API authentication |
+| [Twins and Telemetry](twins-and-telemetry.md) | Creating Twins and publishing and reading Telemetry |
+| [3D Scenes](3d-scenes.md) | Serving WebGL files and wiring Twin data into a panel |
+| [Reference Examples](../examples/README.md) | Example Mine and Example Oven |
+| [Migration](../MIGRATION.md) | Moving data and clients from v1.x to v2.0.0 |
+| [Release procedure](releasing.md) | Dry runs, package publication, and the artifact contract for Offline Bundles |
 
 ## Architecture Decision Records (ADRs)
 
-Key architectural decisions for OpenEgiz v2.0.0 live in [`docs/adr/`](adr/):
+The [decision records](adr/) explain the architectural choices behind v2.0.0.
 
 | File | Decision |
 |---|---|
@@ -14,8 +26,6 @@ Key architectural decisions for OpenEgiz v2.0.0 live in [`docs/adr/`](adr/):
 | [0004-two-profile-security-and-offline-independence.md](adr/0004-two-profile-security-and-offline-independence.md) | Dev / Production Deployment Profiles and Offline Bundle independence |
 
 ## Engineering notes
-
-Historical design and packaging notes:
 
 | File | What it covers |
 |---|---|

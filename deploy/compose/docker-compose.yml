@@ -271,8 +271,7 @@ services:
   extended-api:
     build:
       context: ../../services/extended-api
-    # EXTENDED_API_IMAGE pins a published image (e.g. a release tag); when
-    # unset, compose builds the local sources and tags them `:dev`.
+    # Tag for local builds. Use docker-compose.release.yml for registry images.
     image: ${EXTENDED_API_IMAGE:-ghcr.io/openegiz-io/extended-api:dev}
     restart: unless-stopped
     mem_limit: 512m
@@ -306,8 +305,8 @@ services:
   # Grafana plugins into the shared plugins volume and exits. The image is
   # built by packaging/grafana-plugins/Dockerfile straight from the branding
   # patch pipeline (SRI hashes verified at build time) -- no plugin downloads,
-  # no mutable tags, no insecure TLS flags at deploy time. Override the image
-  # to run a published build, e.g. GRAFANA_PLUGINS_IMAGE=ghcr.io/openegiz-io/grafana-plugins:2.0.0.
+  # no insecure TLS flags at deploy time. The release overlay uses the
+  # corresponding versioned GHCR image without a local build context.
   grafana-plugins:
     image: ${GRAFANA_PLUGINS_IMAGE:-ghcr.io/openegiz-io/grafana-plugins:dev}
     build:
@@ -363,7 +362,7 @@ services:
       start_period: 300s
 
   # Serves the Unity WebGL build straight from ./build in the repository, so
-  # an uploaded build survives restarts (the Helm deployment uses emptyDir).
+  # a build survives restarts. The Helm deployment uses a persistent volume.
   unity:
     image: docker.io/library/nginx:1.28.3-alpine
     restart: unless-stopped

@@ -10,14 +10,18 @@ remain under the Apache License, Version 2.0 (see LICENSES/Apache-2.0.txt):
   Copyright ERTIS Research Group, University of Malaga, and OpenTwins contributors
   https://github.com/ertis-research/opentwins
 
-  Derived files in this repository: the Helm chart glue (Chart.yaml,
-  values.yaml, templates/), post-install/, and the vendored Grafana plugins
-  in vendor/grafana-plugins/ (ertis-opentwins-app, ertis-unity-panel; their
+  Derived files include installation and service configuration and the
+  vendored Grafana plugins in vendor/grafana-plugins/
+  (ertis-opentwins-app, ertis-unity-panel; their
   plugin ids and ERTIS attribution are preserved, only display strings are
   rebranded — see vendor/grafana-plugins/README.md). OpenEgiz has modified
   these files; the git history records every change.
 
-Third-party Helm charts vendored under charts/ keep their own licenses:
+Some nginx configuration in deploy/compose/ditto/ and charts/openegiz/
+is adapted from the Eclipse Ditto Helm chart (Eclipse Public License 2.0).
+
+The legacy subcharts are preserved in the v1 archive under their original
+licenses:
 
   Eclipse Ditto chart, Eclipse Hono chart  - Eclipse Public License 2.0
   Grafana chart, Bitnami MongoDB chart     - Apache License 2.0

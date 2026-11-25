@@ -116,7 +116,7 @@ spec:
         fsGroup: 472
       initContainers:
         - name: install-plugins
-          image: "{{ .Values.grafana.pluginsImage.repository }}:{{ .Values.grafana.pluginsImage.tag }}"
+          image: "{{ .Values.grafana.pluginsImage.repository }}:{{ .Values.grafana.pluginsImage.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.grafana.pluginsImage.pullPolicy }}
           env:
             - name: PLUGINS_DIR

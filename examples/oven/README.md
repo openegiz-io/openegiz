@@ -13,7 +13,7 @@ Minimal Reference Example streaming electrical Telemetry for two industrial oven
 
 ## Run it
 
-From the repository root, with the platform running (`make up`):
+Start the platform with `make up` and run the example from the repository root.
 
 ```bash
 make generate-data
@@ -21,13 +21,13 @@ make generate-data
 
 On first run this creates `examples/.venv`, creates or updates the oven Twins in Ditto from [`twins.json`](twins.json), and publishes Telemetry every 5 seconds. Stop with `Ctrl+C`.
 
-Ports and Ditto credentials are loaded from `deploy/compose/.env`. To target another deployment (such as Kubernetes), pass them explicitly:
+Ports and credentials are loaded from `deploy/compose/.env`. For Kubernetes, forward the Ditto and MQTT ports and pass them explicitly. For an authenticated broker, also pass `MQTT_USERNAME` and `MQTT_PASSWORD`.
 
 ```bash
-make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=...
+make generate-data MQTT_PORT=11883 DITTO_URL=http://localhost:18080 DITTO_PASSWORD=...
 ```
 
-You can also run the generator directly:
+To publish from the Python environment directly, run the generator with the broker settings.
 
 ```bash
 examples/.venv/bin/python examples/oven/data_generator.py --mqtt-port 1883 --interval 2
@@ -37,5 +37,5 @@ examples/.venv/bin/python examples/oven/data_generator.py --mqtt-port 1883 --int
 
 ```bash
 set -a; . deploy/compose/.env; set +a
-curl -s -u "ditto:$DITTO_PASSWORD" http://localhost:8080/api/2/things/org.openegiz:oven-01/features | python3 -m json.tool
+curl -fsS -u "ditto:$DITTO_PASSWORD" "http://localhost:$DITTO_PORT/api/2/things/org.openegiz:oven-01/features" | python3 -m json.tool
 ```

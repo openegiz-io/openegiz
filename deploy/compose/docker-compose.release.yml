@@ -1,0 +1,9 @@
+# Use the first-party images for the checked-out release. Compose builds the
+# local sources when this overlay is omitted.
+services:
+  extended-api:
+    image: ghcr.io/openegiz-io/extended-api:${OPENEGIZ_RELEASE:?set OPENEGIZ_RELEASE to the version without v}
+    build: !reset null
+  grafana-plugins:
+    image: ghcr.io/openegiz-io/grafana-plugins:${OPENEGIZ_RELEASE:?set OPENEGIZ_RELEASE to the version without v}
+    build: !reset null

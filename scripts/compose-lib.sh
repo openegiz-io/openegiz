@@ -12,6 +12,9 @@ compose_resolve_profile() {
 
 compose_build_args() {
   COMPOSE=(docker compose -f "$ROOT/deploy/compose/docker-compose.yml")
+  if [ -n "${OPENEGIZ_RELEASE:-}" ]; then
+    COMPOSE+=(-f "$ROOT/deploy/compose/docker-compose.release.yml")
+  fi
   if [ "$PROFILE" = "prod" ]; then
     COMPOSE+=(-f "$ROOT/deploy/compose/docker-compose.prod.yml")
     if [ "${MQTTS_ENABLED:-false}" = "true" ]; then

@@ -33,11 +33,11 @@ patch="${rest#*.}"
 patch="${patch%%[^0-9]*}"
 patch="${patch:-0}"
 
-if [ "$PROFILE" = "prod" ]; then
+if [ "$PROFILE" = "prod" ] || [ -n "${OPENEGIZ_RELEASE:-}" ]; then
   if [ "$major" -lt 2 ] || \
      { [ "$major" -eq 2 ] && [ "$minor" -lt 24 ]; } || \
      { [ "$major" -eq 2 ] && [ "$minor" -eq 24 ] && [ "$patch" -lt 4 ]; }; then
-    die "Docker Compose $compose_version is too old for the Production Profile; 2.24.4 or newer is required."
+    die "Docker Compose $compose_version is too old for the Production Profile or release images; 2.24.4 or newer is required."
   fi
 else
   if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 20 ]; }; then

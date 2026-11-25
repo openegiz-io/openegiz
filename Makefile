@@ -4,6 +4,10 @@
 # Docker Compose deployment (local development, production, and CI): deploy/compose/
 # ---------------------------------------------------------------------------
 COMPOSE_BASE := docker compose -f deploy/compose/docker-compose.yml
+ifneq ($(strip $(OPENEGIZ_RELEASE)),)
+export OPENEGIZ_RELEASE
+COMPOSE_BASE += -f deploy/compose/docker-compose.release.yml
+endif
 # Once `make up-prod` has run, compose commands include the Production Profile
 # overlay (Caddy HTTPS, MQTT auth, internal-only storage/API). `make up` or
 # `make clean` clears it.

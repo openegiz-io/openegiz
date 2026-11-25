@@ -2,8 +2,8 @@
 """Static repository hygiene check for OpenEgiz v2.0.0+.
 
 Fails if:
-  1. Banned personal lab/course identifiers (gx10-11, gx10-7897, ~/course)
-     appear anywhere in tracked files.
+  1. Lab hostnames, course paths, private IPv4 addresses, or the retired
+     repository slug appear in tracked text.
   2. Unauthorized `opentwins` identifiers appear outside:
      - the fixed Grafana plugin ID (`ertis-opentwins-app`)
      - upstream OpenTwins attribution links (`https://github.com/ertis-research/opentwins`)
@@ -25,10 +25,14 @@ BINARY_EXTS = {
     ".wasm", ".data", ".tar", ".gz", ".pdf",
 }
 
-BANNED_LAB_PATTERNS = [
-    (re.compile(r"gx10-11", re.IGNORECASE), "gx10-11"),
-    (re.compile(r"gx10-7897", re.IGNORECASE), "gx10-7897"),
-    (re.compile(r"~/course\b"), "~/course"),
+BANNED_DEPLOYMENT_PATTERNS = [
+    (re.compile(r"\bg[x]10(?:-\d+)?\b", re.IGNORECASE), "lab hostname"),
+    (re.compile(r"~[/]course\b"), "course path"),
+    (
+        re.compile(r"\b(?:10[.]\d{1,3}|172[.](?:1[6-9]|2\d|3[01])|192[.]168)[.]\d{1,3}[.]\d{1,3}\b"),
+        "private IPv4 address",
+    ),
+    (re.compile(r"\bopenegiz[/]openegiz\b", re.IGNORECASE), "retired repository slug"),
 ]
 
 OPENTWINS_RE = re.compile(r"opentwins", re.IGNORECASE)
@@ -112,11 +116,9 @@ def main() -> int:
         exempt_opentwins = is_opentwins_exempt(rel)
 
         for lineno, line in enumerate(text.splitlines(), start=1):
-            for pat, label in BANNED_LAB_PATTERNS:
+            for pat, label in BANNED_DEPLOYMENT_PATTERNS:
                 if pat.search(line):
-                    violations.append(
-                        f"FAIL {rel}:{lineno}: banned lab/course identifier '{label}'"
-                    )
+                    violations.append(f"FAIL {rel}:{lineno}: found {label}")
 
             if not exempt_opentwins and OPENTWINS_RE.search(line):
                 scrubbed = line

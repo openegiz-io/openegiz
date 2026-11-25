@@ -1,3 +1,4 @@
+{{- $image := printf "%s:%s" .Values.extendedApi.image.repository (.Values.extendedApi.image.tag | default .Chart.AppVersion) -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -39,7 +40,7 @@ spec:
         # exit the process when its initial connect fails, which would leave
         # /api/policies permanently broken if MongoDB was still starting.
         - name: wait-for-mongodb
-          image: "{{ .Values.extendedApi.image.repository }}:{{ .Values.extendedApi.image.tag }}"
+          image: {{ $image | quote }}
           imagePullPolicy: {{ .Values.extendedApi.image.pullPolicy }}
           command:
             - /bin/sh
@@ -52,7 +53,7 @@ spec:
               echo "MongoDB is reachable."
       containers:
         - name: extended-api
-          image: "{{ .Values.extendedApi.image.repository }}:{{ .Values.extendedApi.image.tag }}"
+          image: {{ $image | quote }}
           imagePullPolicy: {{ .Values.extendedApi.image.pullPolicy }}
           env:
             - name: HOST

@@ -13,6 +13,7 @@ Validates via `docker compose ... config --format json`:
      - Internal-only services still publish zero host ports.
   4. Production Profile + Example Mine overlay (`examples/mine/compose.yml`):
      - Valid merged config and `mine-simulator` receives MQTT credentials.
+  5. Release images: both profiles consume the versioned images without build contexts.
 """
 
 import json
@@ -26,6 +27,7 @@ COMPOSE_DIR = os.path.join(ROOT, "deploy", "compose")
 BASE_FILE = os.path.join(COMPOSE_DIR, "docker-compose.yml")
 PROD_FILE = os.path.join(COMPOSE_DIR, "docker-compose.prod.yml")
 MQTTS_FILE = os.path.join(COMPOSE_DIR, "docker-compose.mqtts.yml")
+RELEASE_FILE = os.path.join(COMPOSE_DIR, "docker-compose.release.yml")
 MINE_FILE = os.path.join(ROOT, "examples", "mine", "compose.yml")
 
 TEST_ENV = {
@@ -109,6 +111,8 @@ def check_dev_profile() -> None:
 
     assert "caddy" not in services, "Dev Profile must not include caddy"
     assert not services["mongodb"].get("ports"), "Dev Profile mongodb must not publish host ports"
+    for name in ("extended-api", "grafana-plugins"):
+        assert services[name].get("build"), f"Dev Profile must build {name} from source"
 
     for name, expected_port in (
         ("grafana", 3000),
@@ -193,12 +197,24 @@ def check_prod_with_example_mine() -> None:
     assert sim_env.get("MQTT_PASSWORD") == "test-mqtt-password", "mine-simulator must receive MQTT_PASSWORD in prod"
 
 
+def check_release_images() -> None:
+    for overlays in ([], [PROD_FILE, MQTTS_FILE, MINE_FILE]):
+        services = compose_config(
+            [BASE_FILE, RELEASE_FILE, *overlays],
+            {"OPENEGIZ_RELEASE": "2.0.0-rc.1", "MQTTS_ENABLED": "true"},
+        )["services"]
+        for name in ("extended-api", "grafana-plugins"):
+            assert services[name]["image"] == f"ghcr.io/openegiz-io/{name}:2.0.0-rc.1"
+            assert "build" not in services[name], f"{name} must be pulled or loaded as a release image"
+
+
 def main() -> int:
     checks = [
         ("dev profile", check_dev_profile),
         ("production profile", check_prod_profile),
         ("production + mqtts overlay", check_prod_mqtts_overlay),
         ("production + example-mine overlay", check_prod_with_example_mine),
+        ("release images (dev and production)", check_release_images),
     ]
     failed = 0
     for label, fn in checks:

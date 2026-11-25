@@ -4,7 +4,7 @@ status: accepted
 
 # Two Deployment Profiles and offline independence
 
-OpenEgiz will ship two explicit Deployment Profiles—a **Dev Profile** preserving single-command `localhost` onboarding, and a **Production Profile** providing a hardened baseline without enterprise identity or high-availability clustering overhead. In the Production Profile, Compose adds a Caddy reverse-proxy overlay for automatic HTTPS/TLS termination across Grafana, the Ditto API, and the 3D Scene server; Helm exposes services strictly via `ClusterIP` and TLS-enabled `Ingress` with `existingSecret` support; both profiles disable anonymous MQTT access and keep MongoDB and the Extended API strictly on the internal network.
+OpenEgiz ships a **Dev Profile** for single-command localhost onboarding and a **Production Profile** for shared deployments. In the Production Profile, Compose adds a Caddy reverse proxy to terminate HTTPS for Grafana, the Ditto API, and the 3D Scene server. Helm uses `ClusterIP` Services, supports TLS-enabled `Ingress`, and can reference an `existingSecret` for credentials. The Production Profile in both deployment methods disables anonymous MQTT and keeps MongoDB and the Extended API internal.
 
 All upstream container images will be upgraded to supported, multi-arch releases verified against the Grafana Plugin Bundle, then pinned explicitly for reproducibility. To ensure long-term operational independence from external registries and hosting platforms, OpenEgiz will also provide a repeatable Offline Bundle workflow exporting a git mirror, pinned container image archives, the OCI Helm chart, and SHA-256 checksums for local/NAS archival and air-gapped restoration.
 

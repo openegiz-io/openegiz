@@ -235,7 +235,7 @@ init:
 extendedApi:
   image:
     repository: ghcr.io/openegiz-io/extended-api
-    tag: "2.0.0"
+    tag: "" # Defaults to the chart appVersion.
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -260,7 +260,7 @@ grafana:
     pullPolicy: IfNotPresent
   pluginsImage:
     repository: ghcr.io/openegiz-io/grafana-plugins
-    tag: "2.0.0"
+    tag: "" # Defaults to the chart appVersion.
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
