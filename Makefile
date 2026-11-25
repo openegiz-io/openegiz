@@ -141,6 +141,9 @@ lint:
 	git ls-files -z '*.sh' | xargs -0 -n1 bash -n
 	git ls-files -z 'scripts/*.sh' 'deploy/*.sh' | xargs -0 shellcheck --severity=warning
 	git ls-files -z '*.py' | xargs -0 python3 -c 'import ast, sys; [ast.parse(open(f, encoding="utf-8").read(), f) for f in sys.argv[1:]]'
+	# Plugin Bundle: shipped zips reproduce from upstream and every pinned
+	# plugin chunk matches its SRI digest (packaging/grafana-plugins/verify_bundle.py).
+	python3 packaging/grafana-plugins/verify_bundle.py
 	@bash scripts/compose-env.sh
 	docker compose -f deploy/compose/docker-compose.yml config -q
 	@echo "lint: ok"

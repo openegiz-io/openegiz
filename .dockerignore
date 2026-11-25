@@ -1,0 +1,14 @@
+# Keep the Plugin Bundle image build context (packaging/grafana-plugins/
+# Dockerfile, build from the repository root) to exactly what it copies: the
+# vendored plugin sources and the logo the branding patch embeds. Everything
+# else -- .git, generated credentials in deploy/compose/.env, the local Unity
+# build/ -- stays out of the build context and out of `docker build` cache
+# invalidations.
+*
+!vendor/
+!vendor/grafana-plugins/
+!vendor/grafana-plugins/**
+!packaging/
+!packaging/grafana-plugins/
+!packaging/grafana-plugins/**
+!openegiz_logo_dark.svg

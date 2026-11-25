@@ -298,21 +298,22 @@ services:
         condition: service_started
 
   # ------------------------------------------------------------ dashboards
+  # Plugin Bundle init container: copies the reproducibly rebranded
+  # Grafana plugins into the shared plugins volume and exits. The image is
+  # built by packaging/grafana-plugins/Dockerfile straight from the branding
+  # patch pipeline (SRI hashes verified at build time) -- no plugin downloads,
+  # no mutable tags, no insecure TLS flags at deploy time. Override the image
+  # to run a published build, e.g. GRAFANA_PLUGINS_IMAGE=ghcr.io/openegiz-io/grafana-plugins:2.0.0.
   grafana-plugins:
-    image: docker.io/library/busybox:1.36
+    image: ${GRAFANA_PLUGINS_IMAGE:-ghcr.io/openegiz-io/grafana-plugins:dev}
+    build:
+      context: ../..
+      dockerfile: packaging/grafana-plugins/Dockerfile
     restart: "no"
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        for p in ertis-opentwins-app ertis-unity-panel; do
-          rm -rf "/plugins/$$p"
-          unzip -q -o "/vendor/$$p.zip" -d /plugins
-        done
-        echo "Grafana plugins unpacked"
+    environment:
+      # Must match the grafana volume mount below.
+      PLUGINS_DIR: /plugins
     volumes:
-      - ../../vendor/grafana-plugins:/vendor:ro
       - grafana-plugins:/plugins
 
   grafana:

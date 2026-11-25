@@ -15,8 +15,9 @@ repository over `raw.githubusercontent.com`.
 | `upstream/*.zip` | Unmodified originals, kept for provenance and diffing |
 | `patch-branding.py` | Regenerates the two patched zips from `upstream/` |
 
-Consumed by the `install-opentwins-plugins` init container in `values.yaml`
-(under `grafana.extraInitContainers`).
+Consumed by the `grafana-plugins` init container in `deploy/compose/docker-compose.yml`
+(via the Plugin Bundle image built from `packaging/grafana-plugins/Dockerfile`)
+and by the `install-opentwins-plugins` init container in `values.yaml`.
 
 ## Upstream sources
 
