@@ -39,7 +39,7 @@ ditto_ready() {
     curl --silent --fail --max-time 10 -u "$DEVOPS_AUTH" "$DITTO_URL/status/health" \
         | grep -q '"status" *: *"UP"' || return 1
     for node in policies things things-search connectivity gateway; do
-        curl --silent --fail --max-time 10 -o /dev/null "http://$node:8558/ready" || return 1
+        curl --silent --fail --max-time 10 -o /dev/null "http://$node:7626/ready" || return 1
     done
 }
 
