@@ -143,4 +143,9 @@ lint:
 	git ls-files -z '*.py' | xargs -0 python3 -c 'import ast, sys; [ast.parse(open(f, encoding="utf-8").read(), f) for f in sys.argv[1:]]'
 	@bash scripts/compose-env.sh
 	docker compose -f deploy/compose/docker-compose.yml config -q
+	@# Extended API (services/extended-api/): TypeScript must compile and its
+	@# stack-independent unit tests (auth middleware) must pass. Needs node/yarn.
+	command -v node >/dev/null || { echo "ERROR: lint: node is required to check services/extended-api"; exit 1; }
+	@[ -x services/extended-api/node_modules/.bin/tsc ] || (cd services/extended-api && yarn install --frozen-lockfile)
+	cd services/extended-api && yarn lint
 	@echo "lint: ok"

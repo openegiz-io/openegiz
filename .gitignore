@@ -20,6 +20,10 @@ deploy/compose/.env
 # Set by `make example-mine`: compose commands then include the mine overlay
 deploy/compose/.example-mine
 
+# services/extended-api build artifacts
+services/extended-api/node_modules/
+services/extended-api/dist/
+
 __pycache__/
 *.pyc
 
