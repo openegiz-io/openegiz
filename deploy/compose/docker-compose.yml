@@ -223,7 +223,7 @@ services:
       JAVA_TOOL_OPTIONS: *ditto-java-options
 
   ditto-nginx:
-    image: docker.io/library/nginx:1.28.3-alpine
+    image: docker.io/library/nginx:1.31.0-alpine
     restart: unless-stopped
     mem_limit: 64m
     environment:
@@ -364,7 +364,7 @@ services:
   # Serves the Unity WebGL build straight from ./build in the repository, so
   # a build survives restarts. The Helm deployment uses a persistent volume.
   unity:
-    image: docker.io/library/nginx:1.28.3-alpine
+    image: docker.io/library/nginx:1.31.0-alpine
     restart: unless-stopped
     mem_limit: 64m
     ports:
