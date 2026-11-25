@@ -42,6 +42,9 @@ trap cleanup EXIT
 echo "Containers"
 init_exit=$("${COMPOSE[@]}" ps -a --format '{{.Service}} {{.ExitCode}}' | awk '$1=="init"{print $2}')
 if [ "$init_exit" = "0" ]; then pass "init job finished (policy + connections)"; else fail "init job exit code: ${init_exit:-not run}"; fi
+# The Plugin Bundle init container must have copied both plugins and exited.
+plugins_exit=$("${COMPOSE[@]}" ps -a --format '{{.Service}} {{.ExitCode}}' | awk '$1=="grafana-plugins"{print $2}')
+if [ "$plugins_exit" = "0" ]; then pass "plugin bundle image installed the plugins"; else fail "grafana-plugins init exit code: ${plugins_exit:-not run}"; fi
 unhealthy=$("${COMPOSE[@]}" ps --format '{{.Service}} {{.Health}}' | awk '$2!="" && $2!="healthy"{print $1}')
 if [ -z "$unhealthy" ]; then pass "all health-checked services healthy"; else fail "not healthy: $(echo $unhealthy)"; fi
 
