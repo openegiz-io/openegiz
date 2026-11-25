@@ -33,15 +33,10 @@ jobs:
         run: make up
       - name: make smoke
         run: make smoke
-      - name: Example Mine on top, smoke again
-        run: |
-          make example-mine
-          make smoke
-      - name: Restart keeps the Example Mine
-        run: |
-          make down
-          make up
-          make smoke
+      - name: Start Example Mine
+        run: make example-mine
+      - name: Verify Twin and Telemetry persistence across restart
+        run: bash scripts/compose-smoke.sh --restart
       - name: Memory actually used
         if: always()
         run: docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}'
@@ -66,15 +61,10 @@ jobs:
         run: make up-prod
       - name: make smoke (Production Profile)
         run: make smoke
-      - name: Example Mine on top of Production Profile, smoke again
-        run: |
-          make example-mine
-          make smoke
-      - name: Restart preserves Production Profile and Example Mine
-        run: |
-          make down
-          make up-prod
-          make smoke
+      - name: Start Example Mine on the Production Profile
+        run: make example-mine
+      - name: Verify Twin and Telemetry persistence across Production Profile restart
+        run: bash scripts/compose-smoke.sh --restart
       - name: Verify optional MQTTS listener (port 8883)
         run: |
           set -euo pipefail

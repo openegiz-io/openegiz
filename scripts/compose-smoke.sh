@@ -8,13 +8,16 @@
 # also verifies Caddy HTTPS/TLS routing (Grafana, Ditto HTTP/WS, 3D Scene),
 # HTTP->HTTPS redirect, MQTT authentication (anonymous rejection + auth success),
 # and closed host ports for storage and backend services.
-# Leaves nothing behind: test twins are deleted at the end.
+# Pass --restart in CI to stop and start the active profile and verify durability.
+# Test Twins and the Twin Type fixture are deleted at the end.
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/compose-lib.sh
 . "$ROOT/scripts/compose-lib.sh"
+# shellcheck source=scripts/smoke-lib.sh
+. "$ROOT/scripts/smoke-lib.sh"
 
 compose_resolve_profile "${1:-}"
 
@@ -42,7 +45,7 @@ else
   UNITY_URL="http://$HOST:$UNITY_PORT/build/README.md"
 fi
 
-THING="org.openegiz:smoke-test-$$"
+THING="org.openegiz:smoke-test-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 OVEN_CLEANUP=()
 FAILED=0
 
@@ -52,6 +55,10 @@ check() { local name="$1"; shift; if "$@" >/dev/null 2>&1; then pass "$name"; el
 
 curl_get() { curl ${CURL_TLS_ARGS[@]+"${CURL_TLS_ARGS[@]}"} -sf "$@"; }
 curl_grep() { local pat="$1"; shift; curl_get "$@" | grep -q "$pat"; }
+mqtt_client() {
+  local client="$1"; shift
+  "${COMPOSE[@]}" exec -T mosquitto "$client" -h localhost ${MQTT_CLI_AUTH[@]+"${MQTT_CLI_AUTH[@]}"} "$@" </dev/null
+}
 
 # For reads from Ditto: right after start, while its JVMs warm up and the
 # Example Mine simulator starts, Ditto answers 503 "Please retry" for a few
@@ -250,35 +257,9 @@ done
 
 echo "Telemetry loop"
 value=$((RANDOM % 1000 + 1))
-msg=$(printf '{"topic":"%s/%s/things/twin/commands/modify","path":"/features/smoke/properties/value","value":%s}' \
-  "${THING%%:*}" "${THING#*:}" "$value")
-# Capture the twin event Ditto publishes back, to check what it exposes.
-event_file="$(mktemp)"
-"${COMPOSE[@]}" exec -T mosquitto mosquitto_sub -h localhost ${MQTT_CLI_AUTH[@]+"${MQTT_CLI_AUTH[@]}"} -C 1 -W 30 \
-  -t "openegiz/twin/events/${THING%%:*}/${THING#*:}" >"$event_file" 2>/dev/null &
-sub_pid=$!
-sleep 1
-"${COMPOSE[@]}" exec -T mosquitto mosquitto_pub -h localhost ${MQTT_CLI_AUTH[@]+"${MQTT_CLI_AUTH[@]}"} -t telemetry/smoke -m "$msg"
+check_smoke_twin_events "$THING" "$value"
 
-ok=0
-for _ in $(seq 1 15); do
-  got=$(curl_get -u "ditto:$DITTO_PASSWORD" "$DITTO/api/2/things/$THING/features/smoke/properties/value" || true)
-  if [ "$got" = "$value" ]; then ok=1; break; fi
-  sleep 1
-done
-if [ $ok = 1 ]; then pass "MQTT -> Ditto updated the twin"; else fail "MQTT -> Ditto: twin value is '${got:-?}', expected $value"; fi
-
-wait "$sub_pid" || true
-if [ ! -s "$event_file" ]; then
-  fail "Ditto published no twin event on openegiz/#"
-elif grep -qi '"authorization"' "$event_file"; then
-  fail "twin events on MQTT leak the HTTP Authorization header"
-else
-  pass "twin event published on openegiz/# without credentials"
-fi
-rm -f "$event_file"
-
-flux="from(bucket:\"default\") |> range(start:-5m) |> filter(fn:(r) => r.thingId == \"$THING\") |> last()"
+flux="from(bucket:\"default\") |> range(start:-5m) |> filter(fn:(r) => r.thingId == \"$THING\" and r._field == \"value\") |> last()"
 wait_influx "$flux" ",$value," \
   "Ditto -> Telegraf -> InfluxDB (org openegiz) stored the value" \
   "value $value did not reach InfluxDB within 60 s"
@@ -298,6 +279,35 @@ check_ditto "OpenEgiz app reaches Ditto (plugin proxy)" curl_get -u "admin:$GRAF
 check_ditto "extended API twins via plugin proxy" curl_get -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/twins"
 check_ditto "extended API types via plugin proxy" curl_get -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/types"
 check_ditto "extended API policies via plugin proxy" curl_get -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/policies"
+check "create, read, update, and delete a Twin Type via Grafana's plugin proxy" manage_twin_type "$THING-type"
+if point_before="$(grafana_telemetry_point "$THING" "$value" 2>/dev/null)"; then
+  pass "Grafana's openegiz-influxdb datasource returns the MQTT Telemetry point"
+else
+  fail "Grafana did not return the expected MQTT Telemetry point"
+fi
+
+if [ "${1:-}" = "--restart" ] && [ "$FAILED" = 0 ]; then
+  echo "Compose restart persistence"
+  up_target=up
+  [ "$PROFILE" != "prod" ] || up_target=up-prod
+  # Startup prints the generated login credentials, so keep its output private.
+  if ! make -C "$ROOT" down >/dev/null 2>&1 || ! make -C "$ROOT" "$up_target" >/dev/null 2>&1; then
+    fail "could not restart the Compose $PROFILE profile"
+    exit 1
+  fi
+  # This smoke Twin is independent of Example Mine setup. No write or MQTT
+  # publish to it occurs after restart, so the old state and point must survive.
+  if [ "$(ditto_http --retry 3 --retry-delay 1 "$DITTO/api/2/things/$THING/features/smoke/properties/value" || true)" = "$value" ]; then
+    pass "Twin state persisted across Compose restart"
+  else
+    fail "Twin state was lost across Compose restart"
+  fi
+  if point_after="$(grafana_telemetry_point "$THING" "$value" 2>/dev/null)" && [ "$point_after" = "$point_before" ]; then
+    pass "The pre-restart Telemetry point persisted at the same timestamp"
+  else
+    fail "The pre-restart Telemetry point was lost across Compose restart"
+  fi
+fi
 
 echo "Extended API and 3D Scene"
 if [ "$PROFILE" = "dev" ]; then

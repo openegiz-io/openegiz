@@ -6,9 +6,10 @@
 #   - MongoDB & Extended API services strictly ClusterIP
 #   - Ditto health, default policy, Mosquitto connections, and JVM heap headroom
 #   - MQTT authentication enforcement when allow_anonymous=false (Production Profile)
-#   - Telemetry loop: MQTT -> Ditto -> Twin Event (no Authorization header) -> Telegraf -> InfluxDB (org openegiz)
+#   - MQTT -> Ditto -> Twin Event -> Telegraf -> InfluxDB (org openegiz)
+#   - An authenticated HTTP update produces a Twin Event without Authorization
 #   - Grafana health, Plugin Bundle (ertis-opentwins-app + ertis-unity-panel),
-#     InfluxDB datasource (openegiz-influxdb), and plugin proxy to Ditto & Extended API (/twins, /types, /policies)
+#     time-series queries, and plugin proxy to Ditto & Extended API (/twins, /types, /policies)
 #   - 3D Scene server PVC persistence across pod deletion/restart
 #
 # Usage:
@@ -16,6 +17,10 @@
 #   RELEASE_NAME=e2e-rel NAMESPACE=e2e-ns SECRET_NAME=e2e-creds bash scripts/helm-smoke.sh
 #
 set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/smoke-lib.sh
+. "$ROOT/scripts/smoke-lib.sh"
 
 RELEASE_NAME="${RELEASE_NAME:-openegiz}"
 NAMESPACE="${NAMESPACE:-openegiz}"
@@ -25,7 +30,7 @@ PF_DITTO_PORT="${PF_DITTO_PORT:-18080}"
 PF_GRAFANA_PORT="${PF_GRAFANA_PORT:-13000}"
 PF_SCENE_PORT="${PF_SCENE_PORT:-18090}"
 
-TWIN_ID="org.openegiz:helm-smoke-$$"
+TWIN_ID="org.openegiz:helm-smoke-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 SCENE_FILE="helm-smoke-$$.txt"
 SCENE_CONTENT="openegiz-pvc-persistence-$$"
 FAILED=0
@@ -45,6 +50,11 @@ check_ditto() {
 }
 
 k() { kubectl -n "$NAMESPACE" "$@"; }
+curl_get() { curl -sf "$@"; }
+mqtt_client() {
+  local client="$1"; shift
+  k exec -c mosquitto "$MOSQUITTO_POD" -- "$client" -h localhost ${MQTT_AUTH_ARGS[@]+"${MQTT_AUTH_ARGS[@]}"} "$@"
+}
 
 pod_for() {
   k get pods -l "app.kubernetes.io/instance=${RELEASE_NAME},app.kubernetes.io/component=$1" \
@@ -208,35 +218,9 @@ if [ "$MQTT_AUTH_ENABLED" = "true" ]; then
 fi
 
 value=$((RANDOM % 1000 + 1))
-msg=$(printf '{"topic":"%s/%s/things/twin/commands/modify","path":"/features/smoke/properties/value","value":%s}' \
-  "${TWIN_ID%%:*}" "${TWIN_ID#*:}" "$value")
+check_smoke_twin_events "$TWIN_ID" "$value"
 
-event_file="$(mktemp)"
-k exec -c mosquitto "$MOSQUITTO_POD" -- mosquitto_sub -h localhost ${MQTT_AUTH_ARGS[@]+"${MQTT_AUTH_ARGS[@]}"} -C 1 -W 30 \
-  -t "openegiz/twin/events/${TWIN_ID%%:*}/${TWIN_ID#*:}" >"$event_file" 2>/dev/null &
-sub_pid=$!
-sleep 2
-k exec -c mosquitto "$MOSQUITTO_POD" -- mosquitto_pub -h localhost ${MQTT_AUTH_ARGS[@]+"${MQTT_AUTH_ARGS[@]}"} -t telemetry/smoke -m "$msg"
-
-ok=0
-for _ in $(seq 1 15); do
-  got="$(curl -sf -u "ditto:$DITTO_PASSWORD" "$DITTO/api/2/things/$TWIN_ID/features/smoke/properties/value" || true)"
-  if [ "$got" = "$value" ]; then ok=1; break; fi
-  sleep 1
-done
-if [ "$ok" = 1 ]; then pass "MQTT -> Ditto updated the twin"; else fail "MQTT -> Ditto: twin value is '${got:-?}', expected $value"; fi
-
-wait "$sub_pid" || true
-if [ ! -s "$event_file" ]; then
-  fail "Ditto published no twin event on openegiz/#"
-elif grep -qi '"authorization"' "$event_file"; then
-  fail "twin events on MQTT leak the HTTP Authorization header"
-else
-  pass "twin event published on openegiz/# without credentials"
-fi
-rm -f "$event_file"
-
-flux="from(bucket:\"default\") |> range(start:-5m) |> filter(fn:(r) => r.thingId == \"$TWIN_ID\") |> last()"
+flux="from(bucket:\"default\") |> range(start:-5m) |> filter(fn:(r) => r.thingId == \"$TWIN_ID\" and r._field == \"value\") |> last()"
 influx_ok=0
 for _ in $(seq 1 30); do
   if k exec "$INFLUXDB_POD" -- influx query --org openegiz --token "$INFLUXDB_TOKEN" --raw "$flux" 2>/dev/null \
@@ -263,6 +247,8 @@ check_ditto "OpenEgiz app reaches Ditto (plugin proxy)" curl -sf --max-time 15 -
 check_ditto "extended API twins via plugin proxy" curl -sf --max-time 15 -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/twins"
 check_ditto "extended API types via plugin proxy" curl -sf --max-time 15 -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/types"
 check_ditto "extended API policies via plugin proxy" curl -sf --max-time 15 -u "admin:$GRAFANA_ADMIN_PASSWORD" "$PROXY/extended/api/policies"
+check "create, read, update, and delete a Twin Type via Grafana's plugin proxy" manage_twin_type "$TWIN_ID-type"
+check "Grafana's openegiz-influxdb datasource returns the MQTT Telemetry point" grafana_telemetry_point "$TWIN_ID" "$value"
 
 echo "3D Scene server PVC persistence"
 check "scene-server serves /build/README.md" curl -sf -o /dev/null "$SCENE/build/README.md"
