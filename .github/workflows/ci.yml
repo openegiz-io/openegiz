@@ -19,7 +19,8 @@ jobs:
         run: make lint
 
   compose-e2e:
-    name: compose dev e2e (${{ matrix.runner }})
+    # Keep this check name aligned with main's required status checks.
+    name: compose e2e (${{ matrix.runner }})
     needs: lint
     strategy:
       fail-fast: false
