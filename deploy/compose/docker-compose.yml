@@ -22,7 +22,7 @@ x-ditto-service: &ditto-service
   # unsettled on a busy host, and Compose fails `--wait` and `depends_on` at
   # once on "unhealthy". init waits for readiness itself (init/setup.sh).
   healthcheck:
-    test: ["CMD-SHELL", "curl --fail --silent $$(hostname):8558/alive || exit 1"]
+    test: ["CMD-SHELL", "curl --fail --silent $$(hostname):7626/alive || exit 1"]
     interval: 15s
     timeout: 10s
     retries: 8
@@ -54,20 +54,20 @@ x-ditto-service: &ditto-service
 #   OOMKilled=false), 5-60 minutes into a run, and again after every restart.
 #   Same heaps as before; every limit is now heap + 512 MiB. `make smoke`
 #   checks that margin.
-# - JDK 17.0.8 in the Ditto 3.3.7 images cannot read the container limit on
+# - Older Ditto images (3.3.7, JDK 17.0.8) could not read the container limit on
 #   kernels without the cgroup v1 memory controller (Docker Desktop's 6.12
 #   kernel): a percentage then means a share of all of Docker's memory, and
 #   every JVM was killed within minutes. -Xmx does not depend on that.
 x-ditto-java-options: &ditto-java-options >-
   -XX:ActiveProcessorCount=2 -XX:+ExitOnOutOfMemoryError -XX:+UseContainerSupport
   -XX:+UseStringDeduplication -Xss512k -XX:+UseG1GC
-  -XX:MaxGCPauseMillis=150 -Dakka.coordinated-shutdown.exit-jvm=on
-  -Dakka.cluster.shutdown-after-unsuccessful-join-seed-nodes=180s
-  -Dakka.cluster.failure-detector.threshold=15.0
-  -Dakka.cluster.failure-detector.expected-response-after=10s
-  -Dakka.cluster.failure-detector.acceptable-heartbeat-pause=60s
+  -XX:MaxGCPauseMillis=150 -Dpekko.coordinated-shutdown.exit-jvm=on
+  -Dpekko.cluster.shutdown-after-unsuccessful-join-seed-nodes=180s
+  -Dpekko.cluster.failure-detector.threshold=15.0
+  -Dpekko.cluster.failure-detector.expected-response-after=10s
+  -Dpekko.cluster.failure-detector.acceptable-heartbeat-pause=60s
   -Dditto.cluster.sbr.auto-enable-after=0s
-  -Dakka.cluster.split-brain-resolver.down-all-when-unstable=off
+  -Dpekko.cluster.split-brain-resolver.down-all-when-unstable=off
   -Dditto.protocol.blocklist.0=raw-request-uri -Dditto.protocol.blocklist.1=cache-control
   -Dditto.protocol.blocklist.2=connection -Dditto.protocol.blocklist.3=timeout-access
   -Dditto.protocol.blocklist.4=accept-encoding -Dditto.protocol.blocklist.5=x-forwarded-scheme
@@ -82,7 +82,7 @@ x-ditto-java-options: &ditto-java-options >-
 services:
   # ---------------------------------------------------------------- storage
   mongodb:
-    image: docker.io/library/mongo:6.0
+    image: docker.io/library/mongo:8.0.38
     restart: unless-stopped
     command: ["mongod", "--bind_ip_all", "--storageEngine", "wiredTiger"]
     mem_limit: 512m
@@ -99,7 +99,7 @@ services:
       start_period: 20s
 
   influxdb:
-    image: docker.io/library/influxdb:2.7.4-alpine
+    image: docker.io/library/influxdb:2.7.12-alpine
     restart: unless-stopped
     mem_limit: 512m
     environment:
@@ -125,7 +125,7 @@ services:
 
   # ------------------------------------------------------------- messaging
   mosquitto:
-    image: docker.io/library/eclipse-mosquitto:2.0.18
+    image: docker.io/library/eclipse-mosquitto:2.0.23
     restart: unless-stopped
     mem_limit: 64m
     ports:
@@ -140,7 +140,7 @@ services:
       retries: 6
 
   telegraf:
-    image: docker.io/library/telegraf:1.37-alpine
+    image: docker.io/library/telegraf:1.40.3-alpine
     restart: unless-stopped
     # Run as the telegraf user: as root the image's entrypoint runs setcap on
     # the 270 MB binary, overlayfs copies the whole file up, and those dirty
@@ -161,7 +161,7 @@ services:
   # ----------------------------------------------------------- Eclipse Ditto
   policies:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-policies:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-policies:${DITTO_VERSION:-3.8.15}
     mem_limit: 768m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx256m
@@ -172,7 +172,7 @@ services:
 
   things:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-things:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-things:${DITTO_VERSION:-3.8.15}
     mem_limit: 768m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx256m
@@ -183,7 +183,7 @@ services:
 
   things-search:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-things-search:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-things-search:${DITTO_VERSION:-3.8.15}
     mem_limit: 768m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx256m
@@ -194,7 +194,7 @@ services:
 
   connectivity:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-connectivity:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-connectivity:${DITTO_VERSION:-3.8.15}
     mem_limit: 896m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx384m
@@ -205,7 +205,7 @@ services:
 
   gateway:
     <<: *ditto-service
-    image: docker.io/eclipse/ditto-gateway:${DITTO_VERSION:-3.3.7}
+    image: docker.io/eclipse/ditto-gateway:${DITTO_VERSION:-3.8.15}
     mem_limit: 768m
     environment:
       JVM_CMD_ARGS_ENV: -Xmx256m
@@ -221,7 +221,7 @@ services:
       JAVA_TOOL_OPTIONS: *ditto-java-options
 
   ditto-nginx:
-    image: docker.io/library/nginx:1.25-alpine
+    image: docker.io/library/nginx:1.28.3-alpine
     restart: unless-stopped
     mem_limit: 64m
     environment:
@@ -247,7 +247,7 @@ services:
 
   # Policy + Ditto<->Mosquitto connections (the chart's post-install jobs).
   init:
-    image: docker.io/curlimages/curl:8.10.1
+    image: docker.io/curlimages/curl:8.23.0
     restart: "no"
     entrypoint: ["/bin/sh", "/init/setup.sh"]
     environment:
@@ -319,7 +319,7 @@ services:
       - grafana-plugins:/plugins
 
   grafana:
-    image: docker.io/grafana/grafana:12.3.0
+    image: docker.io/grafana/grafana:12.4.16
     restart: unless-stopped
     mem_limit: 512m
     environment:
@@ -363,7 +363,7 @@ services:
   # Serves the Unity WebGL build straight from ./build in the repository, so
   # an uploaded build survives restarts (the Helm deployment uses emptyDir).
   unity:
-    image: docker.io/library/nginx:1.25-alpine
+    image: docker.io/library/nginx:1.28.3-alpine
     restart: unless-stopped
     mem_limit: 64m
     ports:

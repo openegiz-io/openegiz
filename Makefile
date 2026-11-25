@@ -146,6 +146,9 @@ lint:
 	python3 packaging/grafana-plugins/verify_bundle.py
 	@bash scripts/compose-env.sh
 	docker compose -f deploy/compose/docker-compose.yml config -q
+	@# Every compose image must be pinned to an exact x.y.z version (no
+	@# :latest, no floating major.minor tags).
+	@bash scripts/compose-pinned-images.sh
 	@# Extended API (services/extended-api/): TypeScript must compile and its
 	@# stack-independent unit tests (auth middleware) must pass. Needs node/yarn.
 	command -v node >/dev/null || { echo "ERROR: lint: node is required to check services/extended-api"; exit 1; }
