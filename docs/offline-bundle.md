@@ -47,7 +47,7 @@ git --git-dir=openegiz.git fsck --full
 
 ## Restore to Docker Compose
 
-Use a clean Docker engine with empty image storage and block external network egress for an isolation test. Keep loopback and Docker's internal networks available. Set `bundle` and `helper` to absolute paths on this host. The helper checks every artifact before restoring the release checkout and importing images with their expected names.
+Use a clean Docker engine with empty image storage and block external network egress for an isolation test. Keep loopback and Docker's internal networks available. Set `bundle` and `helper` to absolute paths on this host. The helper verifies every artifact, imports images with their expected names, and then creates the checkout. If an import fails, resolve the runtime error and retry the same command.
 
 ```bash
 python3 "$helper" restore "$bundle" --checkout ./openegiz \

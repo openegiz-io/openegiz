@@ -28,8 +28,11 @@ Renders no Kubernetes resources; fails early on invalid values.
   {{- fail "mosquitto.allowAnonymous must be false when mosquitto.auth.enabled is true" -}}
 {{- end -}}
 
-{{- if and .Values.ingress.enabled .Values.ingress.tls.enabled -}}
-  {{- if and (not .Values.ingress.tls.secretName) (not .Values.ingress.tls.grafanaSecretName) (not .Values.ingress.tls.dittoSecretName) (not .Values.ingress.tls.sceneServerSecretName) -}}
+{{- $tls := .Values.ingress.tls -}}
+{{- if and .Values.ingress.enabled $tls.enabled (not $tls.secretName) -}}
+  {{- if and (eq .Values.profile "production") (not (and $tls.grafanaSecretName $tls.dittoSecretName $tls.sceneServerSecretName)) -}}
+    {{- fail "Production Profile requires a shared Ingress TLS secret or a TLS secret for each host" -}}
+  {{- else if not (or $tls.grafanaSecretName $tls.dittoSecretName $tls.sceneServerSecretName) -}}
     {{- fail "ingress.tls.enabled=true requires ingress.tls.secretName or at least one per-host *SecretName" -}}
   {{- end -}}
 {{- end -}}
@@ -40,6 +43,9 @@ Renders no Kubernetes resources; fails early on invalid values.
   {{- $_ := required "credentials.grafanaAdminPassword is required (or set credentials.existingSecret)" .Values.credentials.grafanaAdminPassword -}}
   {{- $_ := required "credentials.influxdbAdminPassword is required (or set credentials.existingSecret)" .Values.credentials.influxdbAdminPassword -}}
   {{- $_ := required "credentials.influxdbToken is required (or set credentials.existingSecret)" .Values.credentials.influxdbToken -}}
+  {{- if .Values.extendedApi.auth.enabled -}}
+    {{- $_ := required "credentials.extendedApiAuthToken is required when extendedApi.auth.enabled=true (or set credentials.existingSecret)" (trim .Values.credentials.extendedApiAuthToken) -}}
+  {{- end -}}
   {{- if .Values.mosquitto.auth.enabled -}}
     {{- $_ := required "credentials.mqttUsername is required when mosquitto.auth.enabled=true (or set credentials.existingSecret)" .Values.credentials.mqttUsername -}}
     {{- $_ := required "credentials.mqttPassword is required when mosquitto.auth.enabled=true (or set credentials.existingSecret)" .Values.credentials.mqttPassword -}}

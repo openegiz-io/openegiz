@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -54,6 +55,20 @@ def main():
                        for entry in manifest["images"].values())
             image_path = next(iter(manifest["images"].values()))["platforms"][args.platform[0]]["archive"]
             offset = archive.getmember(image_path).offset_data
+
+        docker = work / "bin" / "docker"
+        docker.parent.mkdir()
+        docker.write_text("#!/bin/sh\nexit 17\n", encoding="utf-8")
+        docker.chmod(0o700)
+        retry_checkout = work / "retry-checkout"
+        result = subprocess.run(
+            [*CLI, "restore", bundle, "--checkout", retry_checkout, "--runtime", "docker",
+             "--platform", args.platform[0]],
+            text=True, capture_output=True, cwd=ROOT,
+            env={**os.environ, "PATH": f"{docker.parent}{os.pathsep}{os.environ.get('PATH', os.defpath)}"},
+        )
+        assert result.returncode != 0 and "docker could not import" in result.stderr, result.stderr
+        assert not retry_checkout.exists(), "Failed runtime import left a checkout that blocks a retry"
 
         # Corrupt an artifact without changing tar metadata. Restore must verify
         # before creating a checkout or attempting a runtime import.

@@ -34,8 +34,7 @@ credentials:
   #   influxdb-admin-password, influxdb-token
   # Additional keys when mosquitto.auth.enabled=true:
   #   mqtt-username, mqtt-password
-  # Optional shared secret key when extendedApi.auth.enabled=true (if omitted,
-  # Extended API enforces presence of any non-empty Authorization header):
+  # Required shared secret key when extendedApi.auth.enabled=true:
   #   extended-api-auth-token
   existingSecret: ""
 

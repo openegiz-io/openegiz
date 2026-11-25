@@ -109,6 +109,8 @@ expect_fail() {
 
 expect_fail "missing credentials without existingSecret" \
   helm template "$REL" "$CHART" -n "$NS"
+expect_fail "extended API authentication without a shared token" \
+  helm template "$REL" "$CHART" -n "$NS" -f "$SECRETS_EXAMPLE" --set extendedApi.auth.enabled=true
 expect_fail "production mongodb NodePort" \
   helm template "$REL" "$CHART" -n "$NS" -f "$PROD_VALUES" --set credentials.existingSecret=x --set mongodb.service.type=NodePort
 expect_fail "production influxdb NodePort" \
@@ -119,6 +121,9 @@ expect_fail "production anonymous mosquitto" \
   helm template "$REL" "$CHART" -n "$NS" -f "$PROD_VALUES" --set credentials.existingSecret=x --set mosquitto.allowAnonymous=true
 expect_fail "production ingress without TLS" \
   helm template "$REL" "$CHART" -n "$NS" -f "$PROD_VALUES" --set credentials.existingSecret=x --set ingress.tls.enabled=false
+expect_fail "production ingress TLS with a certificate for only one host" \
+  helm template "$REL" "$CHART" -n "$NS" -f "$PROD_VALUES" --set credentials.existingSecret=x \
+    --set ingress.tls.secretName= --set ingress.tls.grafanaSecretName=grafana-tls
 expect_fail "ingress TLS enabled without any secretName" \
   helm template "$REL" "$CHART" -n "$NS" --set credentials.existingSecret=x --set ingress.enabled=true --set ingress.tls.enabled=true
 

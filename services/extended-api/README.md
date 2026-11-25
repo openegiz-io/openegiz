@@ -9,7 +9,7 @@ licensing). High-level decisions: `docs/adr/0002-extended-api-and-plugin-packagi
 Changes against upstream:
 
 - Optional authentication middleware (`src/middleware/auth.ts`, disabled by
-  default; `AUTH_ENABLED=true` to enforce, optional `AUTH_TOKEN` shared secret).
+  default. When `AUTH_ENABLED=true`, set the `AUTH_TOKEN` shared secret).
 - Multi-stage Dockerfile compiling TypeScript to JavaScript: the runtime image
   has no `ts-node` and is multi-arch (`linux/amd64`, `linux/arm64`).
 - Pinned dependencies via `yarn.lock` in the image build
@@ -28,7 +28,7 @@ Changes against upstream:
 | `DITTO_USERNAME_DEVOPS` / `DITTO_PASSWORD_DEVOPS` | Ditto devops credentials |
 | `MONGO_URI_POLICIES` | MongoDB URI; when set, `GET /api/policies` is enabled |
 | `AUTH_ENABLED` | `true` enforces authentication (default: off) |
-| `AUTH_TOKEN` | Shared secret accepted as `Bearer <token>` or Basic auth |
+| `AUTH_TOKEN` | Required when authentication is enabled. Accepts `Bearer <token>` or Basic auth |
 
 ## Local development
 

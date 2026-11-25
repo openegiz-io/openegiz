@@ -4,7 +4,7 @@
  * Disabled by default: inside the Dev Profile (and the Production Profile's
  * private network) only Grafana's server-side plugin proxy reaches this API,
  * so per-request authentication would add nothing. When the API is exposed
- * beyond the internal network, set AUTH_ENABLED=true and optionally AUTH_TOKEN
+ * beyond the internal network, set AUTH_ENABLED=true and configure AUTH_TOKEN
  * to gate every request.
  *
  * Environment variables:
@@ -12,8 +12,8 @@
  *   AUTH_TOKEN    shared secret. Accepted credentials:
  *                   - "Authorization: Bearer <AUTH_TOKEN>"
  *                   - "Authorization: Basic base64(<AUTH_TOKEN>)"
- *                 When AUTH_TOKEN is unset, any non-empty Authorization header
- *                 is accepted (presence-only check).
+ *                 All requests are rejected if authentication is enabled
+ *                 and AUTH_TOKEN is blank or unset.
  *
  * Note: Grafana's plugin proxy injects its own Authorization header (the Ditto
  * basic-auth credentials) into proxied requests; configure AUTH_TOKEN to match
@@ -44,14 +44,9 @@ export const authMiddleware: RequestHandler = (req: Request, res: Response, next
     return
   }
 
-  const header = req.header('authorization')
-  if (!header || header.trim() === '') {
-    unauthorized(res)
-    return
-  }
-
   const expected = (process.env[AUTH_TOKEN_VAR] ?? '').trim()
-  if (expected !== '' && tokenFromHeader(header.trim()) !== expected) {
+  const header = req.header('authorization')?.trim()
+  if (!expected || !header || tokenFromHeader(header) !== expected) {
     unauthorized(res)
     return
   }

@@ -88,7 +88,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "openegiz.secretName" . }}
                   key: extended-api-auth-token
-                  optional: true
             {{- end }}
           ports:
             - name: http

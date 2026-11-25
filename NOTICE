@@ -18,7 +18,8 @@ remain under the Apache License, Version 2.0 (see LICENSES/Apache-2.0.txt):
   these files; the git history records every change.
 
 Some nginx configuration in deploy/compose/ditto/ and charts/openegiz/
-is adapted from the Eclipse Ditto Helm chart (Eclipse Public License 2.0).
+is adapted from the Eclipse Ditto Helm chart (Eclipse Public License 2.0,
+included in charts/openegiz/LICENSE).
 
 The legacy subcharts are preserved in the v1 archive under their original
 licenses:
@@ -37,8 +38,8 @@ OpenEgiz. It was adopted from the ERTIS Research Group project
   (adopted at commit b49663dea326854a2323423eaeab7e7f54d325a7)
 
 The upstream repository ships no LICENSE file; its package.json declares the
-ISC license and its source headers name the ERTIS authors. OpenEgiz
-redistributes the adopted sources with this attribution, maintains them
+ISC license. The source and runtime image include the ISC license and
+ERTIS attribution (services/extended-api/LICENSE). OpenEgiz maintains the sources
 first-party from `v2.0.0` on (git history records every change), and
 publishes them in the platform's container images.
 

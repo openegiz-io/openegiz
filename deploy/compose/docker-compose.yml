@@ -287,8 +287,8 @@ services:
       ALL_LOGS: "false"
       # Authentication is off by default: in both profiles only Grafana's
       # plugin proxy (internal network) calls this API. Set
-      # EXTENDED_API_AUTH_ENABLED=true when exposing the port beyond it, and
-      # EXTENDED_API_AUTH_TOKEN to require a shared secret (see
+      # EXTENDED_API_AUTH_ENABLED=true and EXTENDED_API_AUTH_TOKEN to a
+      # shared secret when exposing the port beyond it (see
       # services/extended-api/src/middleware/auth.ts).
       AUTH_ENABLED: ${EXTENDED_API_AUTH_ENABLED:-false}
       AUTH_TOKEN: ${EXTENDED_API_AUTH_TOKEN:-}

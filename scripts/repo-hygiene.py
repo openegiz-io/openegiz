@@ -8,7 +8,7 @@ Fails if:
      - the fixed Grafana plugin ID (`ertis-opentwins-app`)
      - upstream OpenTwins attribution links (`https://github.com/ertis-research/opentwins`)
      - legal / license / migration / ADR files (`NOTICE`, `LICENSE`, `LICENSES/*`,
-       `CONTRIBUTING.md`, `MIGRATION.md`, `docs/adr/*`)
+       `charts/openegiz/LICENSE`, `CONTRIBUTING.md`, `MIGRATION.md`, `docs/adr/*`)
      - the Grafana Plugin Bundle rebranding pipeline (`vendor/grafana-plugins/*`,
        `packaging/grafana-plugins/*`, `docs/notes-rebrand-plugins.md`)
 
@@ -48,6 +48,7 @@ ALLOWED_INLINE_PATTERNS = [
 ALLOWED_OPENTWINS_EXACT = {
     "NOTICE",
     "LICENSE",
+    "charts/openegiz/LICENSE",
     "CONTRIBUTING.md",
     "MIGRATION.md",
     "docs/notes-rebrand-plugins.md",

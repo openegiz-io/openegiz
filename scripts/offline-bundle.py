@@ -409,8 +409,7 @@ def verified_bundle(path):
 
 
 def restore_checkout(archive, manifest, checkout):
-    checkout = checkout.resolve()
-    require(not checkout.exists(), f"Checkout already exists: {checkout}")
+    checkout = checkout.absolute()
     checkout.parent.mkdir(parents=True, exist_ok=True)
     release = manifest["release"]
     with tempfile.TemporaryDirectory(prefix=".openegiz-restore-", dir=checkout.parent) as directory:
@@ -505,13 +504,15 @@ def main():
         else:
             with verified_bundle(args.bundle) as (archive, manifest):
                 if args.command == "restore":
+                    if args.checkout:
+                        require(not (args.checkout.exists() or args.checkout.is_symlink()),
+                                f"Checkout already exists: {args.checkout}")
                     if args.runtime:
                         require(args.platform in manifest["platforms"],
                                 f"{args.platform} is unavailable in this Offline Bundle")
+                        restore_images(archive, manifest, args.platform, args.runtime)
                     if args.checkout:
                         restore_checkout(archive, manifest, args.checkout)
-                    if args.runtime:
-                        restore_images(archive, manifest, args.platform, args.runtime)
     except (KeyError, OSError, TypeError, ValueError, subprocess.CalledProcessError, tarfile.TarError) as error:
         print(f"Offline Bundle error: {error}", file=sys.stderr)
         return 1

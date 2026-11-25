@@ -96,10 +96,18 @@ describe('auth middleware enabled', () => {
   )
 
   it(
-    'with no AUTH_TOKEN configured, any non-empty Authorization header is accepted',
+    'rejects credentials when no shared token is configured',
     withEnv({ [AUTH_ENABLED_VAR]: 'true', [AUTH_TOKEN_VAR]: undefined }, async () => {
       const res = await request(appWith()).get('/api/twins').set('Authorization', 'Basic dXNlcjpwYXNz')
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(401)
+    }),
+  )
+
+  it(
+    'rejects credentials when the configured token is blank',
+    withEnv({ [AUTH_ENABLED_VAR]: 'true', [AUTH_TOKEN_VAR]: '   ' }, async () => {
+      const res = await request(appWith()).get('/api/twins').set('Authorization', 'Bearer wrong')
+      expect(res.status).toBe(401)
     }),
   )
 })

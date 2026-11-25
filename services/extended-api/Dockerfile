@@ -31,7 +31,8 @@ COPY package.json yarn.lock ./
 # docs are deleted: nothing at runtime resolves them.
 RUN yarn install --frozen-lockfile --production --ignore-optional \
  && rm -rf node_modules/@types node_modules/.bin node_modules/.yarn* \
- && find node_modules \( -name '*.map' -o -name '*.md' -o -name '*.ts' \) -delete \
+ && find node_modules \( -name '*.map' -o -name '*.md' -o -name '*.ts' \) \
+      ! \( -iname 'license*' -o -iname 'licence*' -o -iname 'notice*' -o -iname 'copying*' -o -iname 'copyright*' \) -delete \
  && yarn cache clean
 
 FROM alpine:3.22
@@ -43,6 +44,7 @@ ENV NODE_ENV=production \
 WORKDIR /usr/src/app
 COPY --from=prod-deps /deps/node_modules ./node_modules
 COPY --from=build /build/dist ./dist
+COPY LICENSE ./LICENSE
 USER node
 EXPOSE 8080
 CMD ["node", "dist/src/app.js"]
