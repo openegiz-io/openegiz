@@ -1,43 +1,39 @@
-# Генератор данных для цифрового двойника печи
+# Example Oven
 
-Генерирует и отправляет реалистичные данные электрических параметров
-двух промышленных печей (`org.openegiz:oven-01`, `org.openegiz:oven-02`) в OpenEgiz через MQTT (Mosquitto).
+Minimal Reference Example streaming electrical Telemetry for two industrial oven Twins (`org.openegiz:oven-01`, `org.openegiz:oven-02`) into OpenEgiz over MQTT (Mosquitto).
 
-## Параметры (features)
+## Features
 
-| Feature | Описание | Диапазон |
+| Feature | Description | Typical range |
 |---|---|---|
-| `voltage_v` | Напряжение (В) | 215–235 |
-| `current_a` | Ток (А) | 5–50 |
-| `active_power_kw` | Активная мощность (кВт) | 1–10 |
-| `power_factor` | Коэффициент мощности (cosφ) | 0.75–0.99 |
+| `voltage_v` | Supply voltage (V) | 200–240 |
+| `current_a` | Heating current (A) | 5–50 |
+| `active_power_kw` | Active power (kW) | 1–10 |
+| `power_factor` | Power factor (cosφ) | 0.75–0.99 |
 
-## Запуск
+## Run it
 
-Из корня репозитория, при запущенной платформе (`make up`):
+From the repository root, with the platform running (`make up`):
 
 ```bash
 make generate-data
 ```
 
-Команда при первом запуске создаёт `examples/.venv`, затем создаёт (или
-обновляет) двойники печей в Ditto из [`twins.json`](twins.json) и шлёт
-телеметрию каждые 5 секунд. Остановить: `Ctrl+C`.
+On first run this creates `examples/.venv`, creates or updates the oven Twins in Ditto from [`twins.json`](twins.json), and publishes Telemetry every 5 seconds. Stop with `Ctrl+C`.
 
-Порты и пароль Ditto берутся из `deploy/compose/.env`. Для Helm-развёртывания
-их нужно передать явно:
+Ports and Ditto credentials are loaded from `deploy/compose/.env`. To target another deployment (such as Kubernetes), pass them explicitly:
 
 ```bash
 make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=...
 ```
 
-Генератор можно запускать и напрямую:
+You can also run the generator directly:
 
 ```bash
 examples/.venv/bin/python examples/oven/data_generator.py --mqtt-port 1883 --interval 2
 ```
 
-## Проверка данных
+## Verify Telemetry
 
 ```bash
 set -a; . deploy/compose/.env; set +a

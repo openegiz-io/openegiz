@@ -8,12 +8,12 @@
 
 Открытая платформа цифровых двойников для промышленности: живое состояние двойников (Eclipse Ditto), телеметрия (MQTT → Telegraf → InfluxDB), дашборды и интерфейс управления двойниками (Grafana), 3D-визуализация (Unity WebGL).
 
-Два способа развёртывания, оба полноценные:
+Два способа развёртывания:
 
-- **Docker Compose** — одна команда на ноутбуке, в CI или на машине судьи конкурса. Начинайте с него.
-- **Helm на k3s** — серверный путь, на нём работает наш ARM64-стенд в лаборатории.
+- **Docker Compose** — одна команда на ноутбуке, рабочей станции или в CI. Начинайте с него.
+- **Helm на Kubernetes (k3s)** — серверный путь.
 
-Основано на [OpenTwins](https://github.com/ertis-research/opentwins) (ERTIS Research, Университет Малаги). Этот форк добавляет развёртывание через Compose со сквозным smoke-тестом, поддержку ARM64, вендоренные Grafana-плагины (без зависимости от чужих релизов в рантайме), исправления стабильности и [Пример рудника](examples/mine/README.ru.md).
+Основано на [OpenTwins](https://github.com/ertis-research/opentwins) (ERTIS Research, Университет Малаги). Платформа включает самодостаточное развёртывание через Compose со сквозным smoke-тестом, multi-arch (`amd64` + `arm64`) образы Extended API и Grafana Plugin Bundle, исправления стабильности и два эталонных примера ([Пример рудника](examples/mine/README.ru.md) и [Пример печи](examples/oven/)).
 
 **Если OpenEgiz вам пригодился, поставьте репозиторию ⭐ звезду** — так проект находят другие люди и компании.
 
@@ -22,7 +22,7 @@
 **Что нужно:** Docker с Compose v2.20+ (Docker Desktop на macOS/Windows, Docker Engine на Linux), `git`, `make` и **6 ГБ памяти для Docker** (сам стенд под постоянной телеметрией занимает около 3,5 ГБ). Работает на amd64 и arm64. В Ubuntu/Debian `make` по умолчанию не установлен: `sudo apt install make`. На Windows всё выполняется внутри WSL2 — сначала [подготовьте Windows](#windows-wsl2).
 
 ```bash
-git clone https://github.com/aleka07/openegiz.git
+git clone https://github.com/openegiz-io/openegiz.git
 cd openegiz
 make up
 ```
@@ -184,60 +184,39 @@ mergeInto(LibraryManager.library, {
 
 Известные особенности панели: селектор «Grafana query» игнорируется (отправляются кадры всех запросов панели), режим модели `Drag and drop` не работает — используйте `External links`.
 
-## Серверное развёртывание (Helm на k3s)
+## Серверное развёртывание (Helm на Kubernetes)
 
-Та же платформа в виде Helm-чарта, для постоянно работающего сервера. Проверено на одноузловом [k3s](https://k3s.io) v1.36, Ubuntu 24.04, arm64 (NVIDIA GB10 / ASUS Ascent GX10). Helm на amd64 пока не проверен — на amd64 берите Compose.
-
-На чистом aarch64 Ubuntu [`bootstrap.sh`](bootstrap.sh) проходит весь путь — k3s + Helm, arm64-образ `ditto-extended-api`, Helm-релиз и smoke-тест после установки — за один идемпотентный запуск:
-
-```bash
-# 1. положить репозиторий на хост и создать файл с паролями
-mkdir -p ~/openegiz-deploy
-cp secrets.values.yaml.example ~/openegiz-deploy/secrets.values.yaml
-chmod 600 ~/openegiz-deploy/secrets.values.yaml
-$EDITOR ~/openegiz-deploy/secrets.values.yaml   # заменить каждый CHANGE_ME
-                                                # openssl rand -base64 18
-
-# 2. запустить из копии репозитория, на хосте
-bash bootstrap.sh
-```
-
-Дополнительно, по умолчанию выключено: `--with-course-tools` (venv с pm4py + JaamSim, см. [docs/notes-course-tools.md](docs/notes-course-tools.md)) и `--with-bakery` (двойники пекарни из [examples/bakery/](examples/bakery/)). Hermes ставится отдельно — [integrations/hermes/install.sh](integrations/hermes/install.sh).
+Ту же платформу можно развернуть в кластере Kubernetes (например, [k3s](https://k3s.io)) через Helm.
 
 > [!IMPORTANT]
-> В `values.yaml` намеренно лежат **невалидные** заглушки для всех паролей. [`secrets.values.yaml.example`](secrets.values.yaml.example) перечисляет ключи, нужные для установки; заполненная копия живёт в `~/openegiz-deploy/secrets.values.yaml` (chmod 600) и никогда не коммитится. Каждой команде helm её нужно передавать через `-f`.
-
-> [!WARNING]
-> `bootstrap.sh` **ещё ни разу не запускался на чистой машине** — он проверен ревью, `bash -n` и `helm template`. Первый настоящий запуск делайте под присмотром; каждое сообщение об ошибке указывает на гайд с объяснением шага.
+> В `values.yaml` намеренно лежат **невалидные** заглушки для всех паролей. [`secrets.values.yaml.example`](secrets.values.yaml.example) перечисляет ключи, нужные для установки; храните заполненную копию вне репозитория (например, `~/openegiz-deploy/secrets.values.yaml`, `chmod 600`) и передавайте через `-f`.
 
 Повседневная работа — через Makefile:
 
 | Команда | Что делает |
 |---|---|
-| `make install` / `upgrade` / `uninstall` | Управление Helm-релизом `opentwins` в namespace `opentwins` (имя фиксировано: от него зависят несколько значений) |
-| `make status` | Статус подов (~1–2 мин до готовности на быстром хосте) |
+| `make install` / `upgrade` / `uninstall` | Управление Helm-релизом (`SECRETS_FILE=~/openegiz-deploy/secrets.values.yaml`) |
+| `make status` | Статус подов |
 | `make endpoints` | Адреса сервисов (Grafana, Ditto, InfluxDB, MQTT) |
-| `make upload-build` / `make copy-build SRC=…` | Сборка Unity WebGL в под nginx / в `build/` |
-| `make unity-demo` | Скачать демо-сцену Unity в `build/` |
-| `make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=…` | Демо с печами на NodePort-ах Helm |
+| `make upload-build` / `make copy-build SRC=…` | Загрузка 3D-сцены WebGL / копирование в `build/` |
+| `make unity-demo` | Скачать пример 3D-сцены в `build/` |
+| `make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=…` | Пример с печами против NodePort-ов Helm |
 
-Логины фиксированы — Grafana `admin`, Ditto `ditto` и `devops`, InfluxDB `admin` (org `opentwins`, bucket `default`). **Паролей по умолчанию нет**: вы генерируете их до первой установки. MongoDB — `ClusterIP`, наружу не видна; у Mosquitto и extended API нет аутентификации, поэтому Helm-стенд — только для LAN.
-
-Пошаговые гайды (на русском, написаны для лабораторного хоста) — в [docs/guides/](docs/guides/); полный журнал установки — [docs/install-log.md](docs/install-log.md).
+Логины фиксированы — Grafana `admin`, Ditto `ditto` и `devops`, InfluxDB `admin` (org `openegiz` в Compose, bucket `default`). **Паролей по умолчанию нет**: сгенерируйте их до первой установки.
 
 ## Структура репозитория
 
 | Путь | Что это |
 |---|---|
 | `deploy/compose/` | Развёртывание через Docker Compose (`make up`) |
-| `examples/` | [Пример рудника](examples/mine/README.ru.md) и старые демо: печь, пекарня, лампочка, AR-лампа, солнечная панель |
-| `scripts/` | Помощники Compose (пароли, предпроверка, smoke-тест) и Helm |
-| `values.yaml`, `templates/`, `charts/` | Helm-чарт: значения, связующие шаблоны платформы, вендоренные сабчарты |
-| `post-install/` | Post-install jobs Helm: политика по умолчанию, подключения Ditto, пример с Raspberry Pi |
-| `vendor/grafana-plugins/` | Вендоренные и ребрендированные Grafana-плагины ERTIS |
-| `rebuild/extended-api/` | Воспроизводимая arm64-сборка образа Ditto extended API |
-| `build/` | Сборка Unity WebGL для панели Unity (пусто; `make unity-demo` — демо-сцена) |
-| `docs/` | Гайды по Helm, журнал установки, инженерные заметки — см. [docs/README.md](docs/README.md). Для быстрого старта на Compose не нужны |
+| `services/extended-api/` | Сервис Extended API (TypeScript/Node, multi-arch образ) |
+| `packaging/grafana-plugins/` | Сборка init-контейнера Grafana Plugin Bundle и проверка SRI |
+| `examples/` | Два эталонных примера: [Пример рудника](examples/mine/README.ru.md) и [Пример печи](examples/oven/) |
+| `scripts/` | Помощники Compose (пароли, предпроверка, smoke-тест, гигиена репо) и Helm |
+| `values.yaml`, `templates/`, `charts/` | Helm-чарт (в `v2.0.0` заменяется на самодостаточный Helm v3 чарт) |
+| `vendor/grafana-plugins/` | Исходные архивы плагинов Grafana и воспроизводимый патчер ребрендинга OpenEgiz |
+| `build/` | 3D-сцена WebGL для панели Unity (пусто; `make unity-demo` скачивает пример 3D-сцены) |
+| `docs/` | Архитектурные решения (`docs/adr/`) и инженерные заметки — см. [docs/README.md](docs/README.md) |
 
 ## Как помочь проекту
 

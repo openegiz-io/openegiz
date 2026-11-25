@@ -266,17 +266,16 @@ Only the two URLs changed; the rest of the init script is byte-identical.
 
 ```diff
 -wget ... https://github.com/ertis-research/opentwins-in-grafana/releases/download/latest/ertis-opentwins-app.zip
-+wget ... https://raw.githubusercontent.com/aleka07/openegiz/main/vendor/grafana-plugins/ertis-opentwins-app.zip
++wget ... https://raw.githubusercontent.com/openegiz-io/openegiz/main/vendor/grafana-plugins/ertis-opentwins-app.zip
 -wget ... https://github.com/ertis-research/grafana-panel-unity/releases/download/latest/ertis-unity-panel.zip
-+wget ... https://raw.githubusercontent.com/aleka07/openegiz/main/vendor/grafana-plugins/ertis-unity-panel.zip
++wget ... https://raw.githubusercontent.com/openegiz-io/openegiz/main/vendor/grafana-plugins/ertis-unity-panel.zip
 ```
 
 Also added `vendor/` to `.helmignore` — the zips are fetched over HTTP at pod
 start and have no reason to be embedded in the packaged chart tarball.
 
-**These URLs 404 until the orchestrator commits and pushes `vendor/` to `main`
-on a public `aleka07/openegiz`.** Expected; noted so nobody debugs it as a
-regression.
+**Historical note:** In v2.0.0 this runtime download was superseded by the
+first-party `packaging/grafana-plugins/` init-container image (see ADR-0002).
 
 ## 10. Validation
 
@@ -305,7 +304,7 @@ regression.
    or `kubectl get deploy --show-labels` still sees OpenTwins. Only a source-level
    fork of `ertis-research/grafana-app-opentwins` (Node ≥22, `create-plugin`
    build) could change that, and it would mean owning the plugin's maintenance.
-   Not recommended before the winter school.
+   Out of scope for the initial plugin rebrand.
 3. **Logo legibility at icon sizes.** The OpenEgiz logo is a ~4.2:1 wordmark.
    Even tightly cropped it is unreadable in the 24 px nav slot that
    `logos.small` feeds. A mark-only variant (the loop glyph without the

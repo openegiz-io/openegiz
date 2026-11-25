@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Data generator for OpenTwins Oven digital twins (oven-01, oven-02).
+Telemetry generator for the OpenEgiz Oven Reference Example (oven-01, oven-02).
 
-Sends simulated telemetry data via MQTT (Mosquitto) using the Eclipse Ditto protocol.
-Features: voltage_v, current_a, active_power_kw, power_factor.
+Publishes simulated electrical telemetry via MQTT (Mosquitto) using the Eclipse
+Ditto protocol. Features: voltage_v, current_a, active_power_kw, power_factor.
 """
 
 import argparse
 import json
 import math
+import os
 import random
 import signal
 import sys
@@ -20,7 +21,7 @@ import paho.mqtt.client as mqtt
 
 # ── Default configuration ────────────────────────────────────────────
 DEFAULT_MQTT_HOST = "localhost"
-DEFAULT_MQTT_PORT = 30511
+DEFAULT_MQTT_PORT = 1883
 DEFAULT_THING_IDS = [
     "org.openegiz:oven-01",
     "org.openegiz:oven-02",
@@ -47,25 +48,25 @@ class OvenSimulator:
         self._step += 1
         t = self._step
 
-        # Phase in the heating cycle (0 to 2π)
+        # Phase in the heating cycle (0 to 2pi)
         phase = (2 * math.pi * t) / self._cycle_period
 
-        # Voltage: ~220V with small grid fluctuations (σ=2V)
+        # Voltage: ~220V with small grid fluctuations (sigma=2V)
         voltage = self._base_voltage + random.gauss(0, 2.0)
         voltage = round(max(200.0, min(240.0, voltage)), 2)
 
-        # Current: sinusoidal heating cycle (ramp up → hold → ramp down)
+        # Current: sinusoidal heating cycle (ramp up -> hold -> ramp down)
         # Range roughly 8A to 45A
         cycle_factor = 0.5 + 0.5 * math.sin(phase)  # 0..1
         current = 8.0 + cycle_factor * 37.0 + random.gauss(0, 1.5)
         current = round(max(5.0, min(50.0, current)), 2)
 
         # Power factor: varies slightly with load
-        # Higher load → slightly better PF
+        # Higher load -> slightly better PF
         pf = self._base_pf + 0.05 * cycle_factor + random.gauss(0, 0.01)
         pf = round(max(0.75, min(0.99, pf)), 3)
 
-        # Active power: P = V × I × PF / 1000 (in kW)
+        # Active power: P = V * I * PF / 1000 (in kW)
         active_power = (voltage * current * pf) / 1000.0
         active_power = round(active_power, 3)
 
@@ -88,7 +89,6 @@ def build_ditto_message(thing_id: str, features: dict) -> dict:
     """
     namespace, name = thing_id.split(":", 1)
 
-    # Add timestamp to each feature
     now = datetime.now(timezone.utc).isoformat()
     ditto_features = {}
     for feat_name, feat_value in features.items():
@@ -120,7 +120,7 @@ class MqttPublisher:
 
         self.client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"oven-data-gen-{random.randint(1000,9999)}",
+            client_id=f"openegiz-oven-sim-{os.getpid()}-{random.randint(1000, 9999)}",
             protocol=mqtt.MQTTv5,
         )
         self.client.on_connect = self._on_connect
@@ -128,28 +128,27 @@ class MqttPublisher:
         self.connected = False
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
-        if rc == 0 or (hasattr(rc, 'value') and rc.value == 0):
+        if rc == 0 or (hasattr(rc, "value") and rc.value == 0):
             self.connected = True
-            print(f"✅ Подключено к MQTT брокеру {self.host}:{self.port}")
+            print(f"Connected to MQTT broker {self.host}:{self.port}")
         else:
-            print(f"❌ Ошибка подключения к MQTT: код={rc}")
+            print(f"MQTT connection failed: code={rc}", file=sys.stderr)
 
     def _on_disconnect(self, client, userdata, flags, rc, properties=None):
         self.connected = False
-        print(f"⚠️  Отключено от MQTT брокера (код={rc})")
+        print(f"Disconnected from MQTT broker (code={rc})")
 
     def connect(self):
         """Connect to the MQTT broker."""
-        print(f"🔌 Подключение к Mosquitto ({self.host}:{self.port})...")
+        print(f"Connecting to Mosquitto ({self.host}:{self.port})...")
         self.client.connect(self.host, self.port, keepalive=60)
         self.client.loop_start()
-        # Wait briefly for connection
         for _ in range(10):
             if self.connected:
                 break
             time.sleep(0.5)
         if not self.connected:
-            print("❌ Не удалось подключиться к MQTT брокеру!")
+            print("Failed to connect to MQTT broker", file=sys.stderr)
             sys.exit(1)
 
     def publish(self, message: dict):
@@ -162,88 +161,95 @@ class MqttPublisher:
         """Disconnect from the broker."""
         self.client.loop_stop()
         self.client.disconnect()
-        print("🔌 Отключено от MQTT брокера")
 
 
 # ── Main loop ────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Генератор данных для цифрового двойника печи (OpenTwins)",
+        description="OpenEgiz Oven Reference Example telemetry generator",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Примеры:
+Examples:
   python3 data_generator.py
   python3 data_generator.py --interval 2
-  python3 data_generator.py --mqtt-host 192.168.1.100 --mqtt-port 1883
+  python3 data_generator.py --mqtt-host 127.0.0.1 --mqtt-port 1883 --steps 1
         """,
     )
     parser.add_argument(
-        "--mqtt-host", default=DEFAULT_MQTT_HOST,
-        help=f"Адрес MQTT-брокера (по умолчанию: {DEFAULT_MQTT_HOST})",
+        "--mqtt-host",
+        default=os.environ.get("MQTT_HOST", DEFAULT_MQTT_HOST),
+        help=f"MQTT broker host (default: {DEFAULT_MQTT_HOST})",
     )
     parser.add_argument(
-        "--mqtt-port", type=int, default=DEFAULT_MQTT_PORT,
-        help=f"Порт MQTT-брокера (по умолчанию: {DEFAULT_MQTT_PORT})",
+        "--mqtt-port",
+        type=int,
+        default=int(os.environ.get("MQTT_PORT", str(DEFAULT_MQTT_PORT))),
+        help=f"MQTT broker port (default: {DEFAULT_MQTT_PORT})",
     )
     parser.add_argument(
-        "--thing-ids", nargs="+", default=DEFAULT_THING_IDS,
-        help=f"ID вещей в Ditto (по умолчанию: {' '.join(DEFAULT_THING_IDS)})",
+        "--thing-ids",
+        nargs="+",
+        default=DEFAULT_THING_IDS,
+        help=f"Ditto Twin IDs (default: {' '.join(DEFAULT_THING_IDS)})",
     )
     parser.add_argument(
-        "--interval", type=float, default=DEFAULT_INTERVAL,
-        help=f"Интервал отправки данных в секундах (по умолчанию: {DEFAULT_INTERVAL})",
+        "--interval",
+        type=float,
+        default=DEFAULT_INTERVAL,
+        help=f"Publish interval in seconds (default: {DEFAULT_INTERVAL})",
+    )
+    parser.add_argument(
+        "--steps",
+        type=int,
+        default=0,
+        help="Stop after N publish rounds (0 = run forever)",
     )
 
     args = parser.parse_args()
 
-    # Setup simulators and MQTT publishers for each twin
     twins = []
     for thing_id in args.thing_ids:
         sim = OvenSimulator()
         pub = MqttPublisher(args.mqtt_host, args.mqtt_port, thing_id)
         twins.append({"id": thing_id, "simulator": sim, "publisher": pub})
 
-    # Graceful shutdown
     running = True
 
     def signal_handler(sig, frame):
         nonlocal running
-        print("\n🛑 Остановка генератора...")
+        print("\nStopping oven telemetry generator...")
         running = False
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Connect all publishers
     for twin in twins:
         twin["publisher"].connect()
 
-    print(f"\n🏭 Генератор данных для {len(twins)} двойников:")
+    print(f"\nStreaming telemetry for {len(twins)} oven Twins:")
     for twin in twins:
-        print(f"   📡 {twin['id']} → telemetry/{twin['id']}")
-    print(f"⏱️  Интервал: {args.interval}с")
-    header = f"{'Время':<12} {'Twin':<25} {'Напр.(V)':<10} {'Ток(A)':<10} {'Мощн.(kW)':<12} {'Cosφ':<8}"
-    print(f"{'─' * len(header)}")
+        print(f"  {twin['id']} -> telemetry/{twin['id']}")
+    print(f"Interval: {args.interval}s")
+    header = f"{'Time':<10} {'Twin':<25} {'Volt (V)':<10} {'Curr (A)':<10} {'Power (kW)':<12} {'PF':<8}"
+    print("-" * len(header))
     print(header)
-    print(f"{'─' * len(header)}")
+    print("-" * len(header))
 
+    rounds = 0
     count = 0
     try:
         while running:
             ts = datetime.now().strftime("%H:%M:%S")
 
             for twin in twins:
-                # Generate data
                 readings = twin["simulator"].generate()
-
-                # Build & publish Ditto message
                 message = build_ditto_message(twin["id"], readings)
                 twin["publisher"].publish(message)
 
                 count += 1
                 print(
-                    f"{ts:<12} "
+                    f"{ts:<10} "
                     f"{twin['id']:<25} "
                     f"{readings['voltage_v']:<10} "
                     f"{readings['current_a']:<10} "
@@ -251,12 +257,15 @@ def main():
                     f"{readings['power_factor']:<8}"
                 )
 
+            rounds += 1
+            if args.steps and rounds >= args.steps:
+                break
             time.sleep(args.interval)
 
     finally:
         for twin in twins:
             twin["publisher"].disconnect()
-        print(f"\n📊 Всего отправлено сообщений: {count}")
+        print(f"\nPublished {count} telemetry message(s).")
 
 
 if __name__ == "__main__":

@@ -8,12 +8,12 @@
 
 An open-source digital twin platform for industry: live twin state (Eclipse Ditto), telemetry (MQTT → Telegraf → InfluxDB), dashboards and a twin management UI (Grafana), 3D visualization (Unity WebGL).
 
-It runs two ways, both complete:
+It runs two ways:
 
-- **Docker Compose** — one command on a laptop, in CI, or on a contest judge machine. Start here.
-- **Helm on k3s** — the server path, used on our ARM64 lab host.
+- **Docker Compose** — one command on a laptop, workstation, or CI runner. Start here.
+- **Helm on Kubernetes (k3s)** — server deployment path.
 
-Based on [OpenTwins](https://github.com/ertis-research/opentwins) by ERTIS Research (University of Málaga). This fork adds the Compose deployment with an end-to-end smoke test, ARM64 support, vendored Grafana plugins (no runtime dependency on upstream releases), stability fixes, and the [Example Mine](examples/mine/).
+Based on [OpenTwins](https://github.com/ertis-research/opentwins) by ERTIS Research (University of Málaga). This platform provides a self-contained Compose deployment with an end-to-end smoke test, multi-arch (`amd64` + `arm64`) packaging for the Extended API and Grafana Plugin Bundle, stability fixes, and two industrial Reference Examples ([Example Mine](examples/mine/) and [Example Oven](examples/oven/)).
 
 **If OpenEgiz is useful to you, please ⭐ star the repository** — it is how other people and companies find the project.
 
@@ -22,7 +22,7 @@ Based on [OpenTwins](https://github.com/ertis-research/opentwins) by ERTIS Resea
 **You need:** Docker with Compose v2.20+ (Docker Desktop on macOS/Windows, Docker Engine on Linux), `git`, `make`, and **6 GB of memory for Docker** (the stack uses about 3.5 GB under sustained telemetry). amd64 and arm64 both work. On Ubuntu/Debian, `make` is not installed by default: `sudo apt install make`. On Windows, run everything inside WSL2 — first do the [Windows setup](#windows-wsl2).
 
 ```bash
-git clone https://github.com/aleka07/openegiz.git
+git clone https://github.com/openegiz-io/openegiz.git
 cd openegiz
 make up
 ```
@@ -184,60 +184,39 @@ mergeInto(LibraryManager.library, {
 
 Known panel quirks: the "Grafana query" selector is ignored (frames from all the panel's queries are sent), and the `Drag and drop` model mode does not work — use `External links`.
 
-## Server deployment (Helm on k3s)
+## Server deployment (Helm on Kubernetes)
 
-The same platform as a Helm chart, for a long-running server. Verified on single-node [k3s](https://k3s.io) v1.36, Ubuntu 24.04, arm64 (NVIDIA GB10 / ASUS Ascent GX10). amd64 on Helm is not verified yet — on amd64, prefer Compose.
-
-On a clean aarch64 Ubuntu host, [`bootstrap.sh`](bootstrap.sh) does the whole path — k3s + Helm, the arm64 `ditto-extended-api` image, the Helm release, and a post-install smoke test — in one idempotent run:
-
-```bash
-# 1. put the repo on the host and create the credentials file
-mkdir -p ~/openegiz-deploy
-cp secrets.values.yaml.example ~/openegiz-deploy/secrets.values.yaml
-chmod 600 ~/openegiz-deploy/secrets.values.yaml
-$EDITOR ~/openegiz-deploy/secrets.values.yaml   # replace every CHANGE_ME
-                                                # openssl rand -base64 18
-
-# 2. run it from the repo checkout, on the host
-bash bootstrap.sh
-```
-
-Optional extras, both off by default: `--with-course-tools` (pm4py venv + JaamSim, see [docs/notes-course-tools.md](docs/notes-course-tools.md)) and `--with-bakery` (the bakery twins from [examples/bakery/](examples/bakery/)). Hermes is installed separately — [integrations/hermes/install.sh](integrations/hermes/install.sh).
+The same platform can be deployed to a Kubernetes cluster (such as [k3s](https://k3s.io)) via Helm.
 
 > [!IMPORTANT]
-> `values.yaml` ships deliberately **invalid** placeholders for every credential. [`secrets.values.yaml.example`](secrets.values.yaml.example) lists the keys a fresh install needs; the filled-in copy lives at `~/openegiz-deploy/secrets.values.yaml` (chmod 600) and is never committed. Every helm command must be given it with `-f`.
+> `values.yaml` ships deliberately **invalid** placeholders for every credential. [`secrets.values.yaml.example`](secrets.values.yaml.example) lists the keys a fresh install needs; keep your filled-in copy outside the repository (for example `~/openegiz-deploy/secrets.values.yaml`, `chmod 600`) and pass it via `-f`.
 
-> [!WARNING]
-> `bootstrap.sh` has **not yet been executed on a clean machine** — it is validated by review, `bash -n` and `helm template` only. Treat the first real run as supervised; every failure message points at the guide that explains the step.
-
-Day-to-day operation goes through the Makefile:
+Day-to-day Helm operations go through the Makefile:
 
 | Command | What it does |
 |---|---|
-| `make install` / `upgrade` / `uninstall` | Manage the Helm release `opentwins` in namespace `opentwins` (the name is fixed: several values derive from it) |
-| `make status` | Pod status (~1–2 min to converge on a fast host) |
+| `make install` / `upgrade` / `uninstall` | Manage the Helm release (`SECRETS_FILE=~/openegiz-deploy/secrets.values.yaml`) |
+| `make status` | Pod status |
 | `make endpoints` | Service URLs (Grafana, Ditto, InfluxDB, MQTT) |
-| `make upload-build` / `make copy-build SRC=…` | Unity WebGL build to the nginx pod / into `build/` |
-| `make unity-demo` | Download the demo Unity scene into `build/` |
-| `make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=…` | Oven demo against the Helm NodePorts |
+| `make upload-build` / `make copy-build SRC=…` | Upload a 3D Scene WebGL build / copy into `build/` |
+| `make unity-demo` | Download the sample 3D Scene into `build/` |
+| `make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=…` | Run the Oven Reference Example against Helm NodePorts |
 
-Usernames are fixed — Grafana `admin`, Ditto `ditto` and `devops`, InfluxDB `admin` (org `opentwins`, bucket `default`). There are **no default passwords**: you generate them before the first install. MongoDB is `ClusterIP` and not exposed; Mosquitto and the extended API have no authentication, so the Helm stand is LAN-only.
-
-The step-by-step guides (in Russian, written for the lab host) are in [docs/guides/](docs/guides/); the full installation journal is [docs/install-log.md](docs/install-log.md).
+Usernames are fixed — Grafana `admin`, Ditto `ditto` and `devops`, InfluxDB `admin` (org `openegiz` in Compose, bucket `default`). There are **no default passwords**: generate them before installing.
 
 ## Repository layout
 
 | Path | What it is |
 |---|---|
 | `deploy/compose/` | Docker Compose deployment (`make up`) |
-| `examples/` | [Example Mine](examples/mine/) and older demos: oven, bakery, light bulb, AR lamp, solar |
-| `scripts/` | Compose helpers (credentials, preflight, smoke test) and Helm helpers |
-| `values.yaml`, `templates/`, `charts/` | Helm chart: values, platform glue, vendored subcharts |
-| `post-install/` | Helm post-install jobs: default policy, Ditto connections, Raspberry Pi example |
-| `vendor/grafana-plugins/` | Vendored and rebranded ERTIS Grafana plugins |
-| `rebuild/extended-api/` | Reproducible arm64 build of the Ditto extended API image |
-| `build/` | Unity WebGL build served to the Unity panel (empty; `make unity-demo` for the demo scene) |
-| `docs/` | Helm guides (in Russian), installation journal, engineering notes — see [docs/README.md](docs/README.md). Not needed for the Compose quick start |
+| `services/extended-api/` | First-party Extended API service (TypeScript/Node, multi-arch image) |
+| `packaging/grafana-plugins/` | Reproducible Grafana Plugin Bundle init-container build & SRI verification |
+| `examples/` | Two Reference Examples: [Example Mine](examples/mine/) and [Example Oven](examples/oven/) |
+| `scripts/` | Compose helpers (credentials, preflight, smoke test, repo hygiene) and Helm helpers |
+| `values.yaml`, `templates/`, `charts/` | Helm chart (being replaced by a self-contained Helm v3 chart in v2.0.0) |
+| `vendor/grafana-plugins/` | Upstream Grafana plugin archives and reproducible OpenEgiz branding patcher |
+| `build/` | 3D Scene WebGL build served to the Unity panel (empty; `make unity-demo` downloads a sample scene) |
+| `docs/` | Architecture Decision Records (`docs/adr/`) and engineering notes — see [docs/README.md](docs/README.md) |
 
 ## Contributing
 

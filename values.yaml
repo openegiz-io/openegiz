@@ -101,7 +101,7 @@ ditto:
     # the published upstream defaults (ditto/ditto, devops/foobar).
     # Real values live ONLY on the host:
     #   override file : ~/openegiz-deploy/secrets.values.yaml  (chmod 600)
-    #   human copy    : ~/course/CREDENTIALS.md                (chmod 600)
+    #   human copy    : ~/openegiz-deploy/CREDENTIALS.md         (chmod 600)
     # Deploy with:  helm upgrade opentwins <chart> -n opentwins \
     #                 -f ~/openegiz-deploy/secrets.values.yaml
     # (`make upgrade` does this for you and refuses to run without the file.)

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# Rebuild the Eclipse Ditto Extended API image natively on arm64 (gx10-11).
+# Rebuild the Eclipse Ditto Extended API image natively on an arm64 host.
 #
-# Legacy path, used only by bootstrap.sh (Helm v2/k3s lab deployment). The
-# canonical, multi-arch build lives in services/extended-api/ and is what
-# deploy/compose builds; this script remains for the pre-v2 k3s flow.
+# Legacy path, retained only for the pre-v2 k3s flow until #42 replaces the
+# root Helm chart. The canonical, multi-arch build lives in
+# services/extended-api/ and is what deploy/compose builds.
 #
 # Upstream sources carry NO license -> the image stays LOCAL. Never push it
 # to Docker Hub or any other registry.
 #
-# Run this ON the arm64 host (gx10-11), not on the Mac.
+# Run this ON the arm64 host, not on an amd64 workstation.
 #
 set -euo pipefail
 

@@ -1,7 +1,7 @@
 # Build log — Ditto Extended API (arm64)
 
 **Date:** 2026-08-07
-**Host:** gx10-11 — Ubuntu 24.04, aarch64, kernel 6.17.0-1026-nvidia, Docker 29.2.1
+**Host:** arm64-host — Ubuntu 24.04, aarch64, kernel 6.17.0-1026-nvidia, Docker 29.2.1
 **Build type:** native arm64 (no QEMU emulation)
 
 ## Source
@@ -12,7 +12,7 @@
 | Commit | `b49663dea326854a2323423eaeab7e7f54d325a7` |
 | Short SHA | `b49663d` |
 | Commit date / subject | 2026-05-04 — `chore: add .env.example file` |
-| Checkout path | `~/openegiz-build/extended-api` on gx10-11 |
+| Checkout path | `~/openegiz-build/extended-api` on the arm64 host |
 
 **Licensing:** the upstream repo ships no LICENSE file. The image is therefore
 kept strictly local — it was **not** pushed to Docker Hub or any other registry,
@@ -62,7 +62,7 @@ gunzip -c ditto-extended-api-arm64.tar.gz | sudo k3s ctr images import -
 ```
 
 Reproducible equivalents live in `rebuild/extended-api/` (`Dockerfile` +
-`build.sh`). `build.sh` runs the whole sequence end to end on gx10-11.
+`build.sh`). `build.sh` runs the whole sequence end to end on an arm64 host.
 
 ## Failures and fixes
 
@@ -142,9 +142,9 @@ containerd store and exists in no registry, any Pod referencing it **must** set
 a 404 / ImagePullBackOff. Prefer referencing the immutable
 `arm64-b49663d` tag over `latest`.
 
-**Single-node caveat:** the import touched gx10-11's containerd only. If the
+**Single-node caveat:** the import touched the build node's containerd only. If the
 cluster ever gains a second node, the tarball must be imported there too, or
-the Pod must be pinned to gx10-11.
+the Pod must be pinned to that node.
 
 ## Runtime configuration reference
 

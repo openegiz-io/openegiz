@@ -17,6 +17,7 @@ HOST=127.0.0.1
 DITTO="http://$HOST:$DITTO_PORT"
 GRAFANA="http://$HOST:$GRAFANA_PORT"
 THING="org.openegiz:smoke-test-$$"
+OVEN_CLEANUP=()
 FAILED=0
 
 pass() { printf '  \033[32mok\033[0m    %s\n' "$1"; }
@@ -34,8 +35,43 @@ check_ditto() {
   fail "$name"
 }
 
+wait_influx() {
+  local flux="$1" pattern="$2" pass_msg="$3" fail_msg="$4"
+  for _ in $(seq 1 30); do
+    if "${COMPOSE[@]}" exec -T influxdb influx query --org openegiz --token "$INFLUXDB_TOKEN" --raw "$flux" 2>/dev/null \
+        | grep -qE "$pattern"; then
+      pass "$pass_msg"
+      return
+    fi
+    sleep 2
+  done
+  fail "$fail_msg"
+}
+
+run_oven_generator() {
+  local py=""
+  if python3 -c "import paho.mqtt.client as m; assert hasattr(m, 'CallbackAPIVersion')" >/dev/null 2>&1; then
+    py="python3"
+  elif [ -x "$ROOT/examples/.venv/bin/python" ] && \
+       "$ROOT/examples/.venv/bin/python" -c "import paho.mqtt.client as m; assert hasattr(m, 'CallbackAPIVersion')" >/dev/null 2>&1; then
+    py="$ROOT/examples/.venv/bin/python"
+  elif docker image inspect openegiz/example-mine:local >/dev/null 2>&1; then
+    docker run --rm --network openegiz_default -v "$ROOT/examples/oven:/oven:ro" \
+      openegiz/example-mine:local python /oven/data_generator.py --mqtt-host mosquitto --mqtt-port 1883 --steps 1 >/dev/null 2>&1
+    return $?
+  else
+    python3 -m venv "$ROOT/examples/.venv" >/dev/null 2>&1 && \
+      "$ROOT/examples/.venv/bin/pip" install --quiet --disable-pip-version-check -r "$ROOT/examples/requirements.txt" >/dev/null 2>&1 || return 1
+    py="$ROOT/examples/.venv/bin/python"
+  fi
+  "$py" "$ROOT/examples/oven/data_generator.py" --mqtt-host "$HOST" --mqtt-port "$MQTT_PORT" --steps 1 >/dev/null 2>&1
+}
+
 cleanup() {
   curl -s -o /dev/null -u "ditto:$DITTO_PASSWORD" -X DELETE "$DITTO/api/2/things/$THING" || true
+  for oven_id in "${OVEN_CLEANUP[@]}"; do
+    curl -s -o /dev/null -u "ditto:$DITTO_PASSWORD" -X DELETE "$DITTO/api/2/things/$oven_id" || true
+  done
 }
 trap cleanup EXIT
 
@@ -91,7 +127,7 @@ msg=$(printf '{"topic":"%s/%s/things/twin/commands/modify","path":"/features/smo
 # Capture the twin event Ditto publishes back, to check what it exposes.
 event_file="$(mktemp)"
 "${COMPOSE[@]}" exec -T mosquitto mosquitto_sub -h localhost -C 1 -W 30 \
-  -t "opentwins/twin/events/${THING%%:*}/${THING#*:}" >"$event_file" 2>/dev/null &
+  -t "openegiz/twin/events/${THING%%:*}/${THING#*:}" >"$event_file" 2>/dev/null &
 sub_pid=$!
 sleep 1
 "${COMPOSE[@]}" exec -T mosquitto mosquitto_pub -h localhost -t telemetry/smoke -m "$msg"
@@ -106,28 +142,24 @@ if [ $ok = 1 ]; then pass "MQTT -> Ditto updated the twin"; else fail "MQTT -> D
 
 wait "$sub_pid" || true
 if [ ! -s "$event_file" ]; then
-  fail "Ditto published no twin event on opentwins/#"
+  fail "Ditto published no twin event on openegiz/#"
 elif grep -qi '"authorization"' "$event_file"; then
   fail "twin events on MQTT leak the HTTP Authorization header"
 else
-  pass "twin event published without credentials"
+  pass "twin event published on openegiz/# without credentials"
 fi
 rm -f "$event_file"
 
-ok=0
 flux="from(bucket:\"default\") |> range(start:-5m) |> filter(fn:(r) => r.thingId == \"$THING\") |> last()"
-for _ in $(seq 1 30); do
-  if "${COMPOSE[@]}" exec -T influxdb influx query --org opentwins --token "$INFLUXDB_TOKEN" --raw "$flux" 2>/dev/null \
-      | grep -q ",$value,"; then ok=1; break; fi
-  sleep 2
-done
-if [ $ok = 1 ]; then pass "Ditto -> Telegraf -> InfluxDB stored the value"; else fail "value $value did not reach InfluxDB within 60 s"; fi
+wait_influx "$flux" ",$value," \
+  "Ditto -> Telegraf -> InfluxDB (org openegiz) stored the value" \
+  "value $value did not reach InfluxDB within 60 s"
 
 echo "Grafana"
 check "API healthy" curl -sf "$GRAFANA/api/health"
 check "OpenEgiz app plugin enabled" sh -c "curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD $GRAFANA/api/plugins/ertis-opentwins-app/settings | grep -q '\"enabled\":true'"
 check "Unity panel plugin loaded" curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA/api/plugins/ertis-unity-panel/settings"
-check "InfluxDB datasource healthy" sh -c "curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD $GRAFANA/api/datasources/uid/opentwins-influxdb/health | grep -q '\"OK\"'"
+check "InfluxDB datasource healthy" sh -c "curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD $GRAFANA/api/datasources/uid/openegiz-influxdb/health | grep -q '\"OK\"'"
 # The OpenEgiz app reaches Ditto and the extended API only through Grafana's
 # plugin proxy, from inside the Grafana container.
 PROXY="$GRAFANA/api/plugin-proxy/ertis-opentwins-app"
@@ -143,20 +175,38 @@ echo "Extended API and Unity"
 check_ditto "extended API twins (direct port)" curl -sf "http://$HOST:$EXTENDED_API_PORT/api/twins"
 check "Unity file server serves build/" curl -sf -o /dev/null "http://$HOST:$UNITY_PORT/build/README.md"
 
+echo "Example Oven"
+for oven_id in org.openegiz:oven-01 org.openegiz:oven-02; do
+  if ! curl -sf -u "ditto:$DITTO_PASSWORD" "$DITTO/api/2/things/$oven_id" >/dev/null 2>&1; then
+    OVEN_CLEANUP+=("$oven_id")
+  fi
+done
+check "create oven twins from examples/oven/twins.json" env \
+  DITTO_URL="$DITTO" DITTO_PASSWORD="$DITTO_PASSWORD" TWINS_FILE="$ROOT/examples/oven/twins.json" \
+  python3 "$ROOT/examples/mine/setup_twins.py"
+
+oven_start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+if run_oven_generator; then
+  pass "oven generator published telemetry round"
+else
+  fail "oven generator failed to publish telemetry"
+fi
+
+oven_flux="from(bucket:\"default\") |> range(start: $oven_start) |> filter(fn:(r) => r.thingId == \"org.openegiz:oven-01\" and r._field == \"value_voltage_v_properties_value\") |> count()"
+wait_influx "$oven_flux" ',[1-9][0-9]*,value_voltage_v_properties_value,' \
+  "oven telemetry reaches InfluxDB (org openegiz)" \
+  "no fresh Example Oven telemetry in InfluxDB since $oven_start"
+
 if "${COMPOSE[@]}" ps -a --format '{{.Service}}' 2>/dev/null | grep -qx mine-setup || \
    docker ps -a --format '{{.Names}}' | grep -q '^openegiz-mine-simulator-'; then
   echo "Example Mine"
   for twin in mine-01 excavator-01 truck-01 truck-02 crusher-01; do
     check_ditto "twin org.openegiz.mine:$twin exists" curl -sf -u "ditto:$DITTO_PASSWORD" "$DITTO/api/2/things/org.openegiz.mine:$twin"
   done
-  ok=0
   mine_flux='from(bucket:"default") |> range(start:-2m) |> filter(fn:(r) => r.thingId == "org.openegiz.mine:truck-01" and r._field == "value_route_position_properties_value") |> count()'
-  for _ in $(seq 1 30); do
-    if "${COMPOSE[@]}" exec -T influxdb influx query --org opentwins --token "$INFLUXDB_TOKEN" --raw "$mine_flux" 2>/dev/null \
-        | grep -qE ',[1-9][0-9]*,value_route_position_properties_value,'; then ok=1; break; fi
-    sleep 2
-  done
-  if [ $ok = 1 ]; then pass "simulator telemetry reaches InfluxDB"; else fail "no Example Mine telemetry in InfluxDB for the last 2 minutes"; fi
+  wait_influx "$mine_flux" ',[1-9][0-9]*,value_route_position_properties_value,' \
+    "simulator telemetry reaches InfluxDB" \
+    "no Example Mine telemetry in InfluxDB for the last 2 minutes"
   # Same query the app's Twins page sends.
   check_ditto "Twins UI lists the Example Mine twins" sh -c "curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD '$PROXY/ditto/api/2/search/things?filter=ne(attributes/_isType,true)&fields=thingId&option=size(200)' | grep -q 'org.openegiz.mine:truck-01'"
   check "dashboard provisioned" curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA/api/dashboards/uid/openegiz-example-mine"

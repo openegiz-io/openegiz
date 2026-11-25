@@ -1,7 +1,7 @@
 .PHONY: up down ps logs smoke clean example-mine example-mine-stop install uninstall status endpoints upgrade upload-build generate-data copy-build unity-demo check-secrets check-public-host
 
 # ---------------------------------------------------------------------------
-# Docker Compose deployment (laptops, CI, contest judges): deploy/compose/
+# Docker Compose deployment (local development and CI): deploy/compose/
 # ---------------------------------------------------------------------------
 COMPOSE_BASE := docker compose -f deploy/compose/docker-compose.yml
 # Once `make example-mine` has run, every compose command also loads the mine
@@ -58,10 +58,10 @@ clean:
 # Helm deployment (servers): the chart at the repository root
 # ---------------------------------------------------------------------------
 # Several values reference names derived from the release name (e.g. the
-# telegraf configmap), so the release MUST be called "opentwins" until those
-# references are made release-agnostic.
-RELEASE_NAME := opentwins
-NAMESPACE    := opentwins
+# telegraf configmap), so the legacy v2 release stays pinned until #42 replaces
+# the root chart with a release-agnostic Helm v3 chart.
+RELEASE_NAME := opentwins# legacy-helm-v2
+NAMESPACE    := opentwins# legacy-helm-v2
 CHART_PATH   := .
 
 # Credentials live OUTSIDE this repo (rotated 2026-08-07). values.yaml carries
@@ -136,11 +136,13 @@ copy-build:
 .PHONY: lint
 lint:
 	helm lint . -f secrets.values.yaml.example --set grafanaPlugin.publicHost=127.0.0.1
-	helm template opentwins . -n opentwins -f secrets.values.yaml.example \
+	helm template $(RELEASE_NAME) . -n $(NAMESPACE) -f secrets.values.yaml.example \
 	  --set grafanaPlugin.publicHost=127.0.0.1 > /dev/null
 	git ls-files -z '*.sh' | xargs -0 -n1 bash -n
 	git ls-files -z 'scripts/*.sh' 'deploy/*.sh' | xargs -0 shellcheck --severity=warning
 	git ls-files -z '*.py' | xargs -0 python3 -c 'import ast, sys; [ast.parse(open(f, encoding="utf-8").read(), f) for f in sys.argv[1:]]'
+	@# Repository hygiene: no banned lab/course identifiers or stray legacy naming.
+	@python3 scripts/repo-hygiene.py
 	# Plugin Bundle: shipped zips reproduce from upstream and every pinned
 	# plugin chunk matches its SRI digest (packaging/grafana-plugins/verify_bundle.py).
 	python3 packaging/grafana-plugins/verify_bundle.py

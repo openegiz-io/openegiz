@@ -68,7 +68,7 @@ still gets `mongodb://opentwins-mongodb/ditto`. Hono's literal
 
 ## Validation
 
-`helm` v3.17.2 is installed locally, so validation ran on this Mac (no need for gx10-11).
+`helm` v3.17.2 is installed locally, so validation ran locally on macOS (no remote cluster required).
 
 - `helm lint .` — 0 failed (only the usual "icon is recommended" info).
 - `helm template opentwins .` — renders without errors.

@@ -12,9 +12,8 @@ protocol "modify" commands (topic telemetry/<thing-name>); Ditto updates the
 twins, and the platform's own pipeline carries the events on to InfluxDB and
 Grafana. The simulator never talks to Ditto or InfluxDB directly.
 
-It is a baseline, not a model of a real mine: ore grade is a random walk,
-speeds are constant with noise, there is no road network or blasting.
-Contest submissions are expected to go far beyond it.
+It is a minimal Reference Example, not a full site model: ore grade is a random
+walk, speeds are constant with noise, and there is no road network or blasting.
 """
 
 import argparse
