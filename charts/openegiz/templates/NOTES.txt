@@ -1,0 +1,26 @@
+OpenEgiz {{ .Chart.AppVersion }} has been deployed!
+
+  Release:   {{ .Release.Name }}
+  Namespace: {{ .Release.Namespace }}
+  Profile:   {{ .Values.profile }}
+
+{{- if .Values.ingress.enabled }}
+External endpoints (Ingress, TLS={{ .Values.ingress.tls.enabled }}):
+{{- $scheme := ternary "https" "http" .Values.ingress.tls.enabled }}
+  Grafana:         {{ $scheme }}://{{ .Values.ingress.hosts.grafana }}
+  Eclipse Ditto:   {{ $scheme }}://{{ .Values.ingress.hosts.ditto }}
+  3D Scene Server: {{ $scheme }}://{{ .Values.ingress.hosts.sceneServer }}
+{{- else }}
+All services use ClusterIP by default. Forward ports locally to inspect:
+
+  Grafana:         kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "openegiz.grafana.fullname" . }} 3000:{{ .Values.grafana.service.port }}
+  Eclipse Ditto:   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "openegiz.ditto.nginx.fullname" . }} 8080:{{ .Values.ditto.nginx.service.port }}
+  3D Scene Server: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "openegiz.sceneServer.fullname" . }} 8090:{{ .Values.sceneServer.service.port }}
+  Mosquitto MQTT:  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "openegiz.mosquitto.fullname" . }} 1883:{{ .Values.mosquitto.service.port }}
+{{- end }}
+
+Upload a compiled 3D Scene WebGL bundle to the persistent 3D Scene server:
+  RELEASE_NAME={{ .Release.Name }} NAMESPACE={{ .Release.Namespace }} make upload-build
+
+Verify pod status:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}

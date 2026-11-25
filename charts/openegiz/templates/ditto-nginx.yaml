@@ -1,0 +1,254 @@
+{{- $gatewayHost := include "openegiz.ditto.gateway.fullname" . -}}
+{{- $nginxConf := printf `worker_processes 2;
+events {
+  worker_connections 1024;
+}
+http {
+  charset utf-8;
+  default_type application/json;
+  include mime.types;
+  proxy_connect_timeout 70;
+  proxy_send_timeout 70;
+  proxy_read_timeout 70;
+  send_timeout 70;
+  client_header_buffer_size 8k;
+  large_client_header_buffers 4 16k;
+  merge_slashes off;
+
+  map $http_authorization $authentication {
+    default "Authentication required";
+    "~Bearer" "off";
+  }
+  map $http_authorization $nginx_auth_user {
+    default "nginx:${remote_user}";
+    "~Bearer" "";
+  }
+
+  upstream ditto-gateway {
+    server %s:8080;
+  }
+
+  server {
+    listen 80;
+    server_name _;
+
+    location / {
+      index index.html;
+    }
+
+    location /api {
+      include nginx-cors.conf;
+      auth_basic                    $authentication;
+      auth_basic_user_file          nginx.htpasswd;
+      proxy_set_header              X-Forwarded-User          $remote_user;
+      proxy_set_header              x-ditto-pre-authenticated $nginx_auth_user;
+      proxy_pass                    http://ditto-gateway;
+      proxy_http_version            1.1;
+      proxy_set_header              Host                      $http_host;
+      proxy_set_header              X-Real-IP                 $remote_addr;
+      proxy_set_header              X-Forwarded-For           $proxy_add_x_forwarded_for;
+      proxy_set_header              Connection                '';
+      chunked_transfer_encoding     off;
+      proxy_buffering               off;
+      proxy_cache                   off;
+    }
+
+    location /ws {
+      auth_basic                    $authentication;
+      auth_basic_user_file          nginx.htpasswd;
+      proxy_set_header              X-Forwarded-User          $remote_user;
+      proxy_set_header              x-ditto-pre-authenticated $nginx_auth_user;
+      proxy_pass                    http://ditto-gateway;
+      proxy_http_version            1.1;
+      proxy_set_header              Host                      $http_host;
+      proxy_set_header              X-Real-IP                 $remote_addr;
+      proxy_set_header              X-Forwarded-For           $proxy_add_x_forwarded_for;
+      proxy_set_header              Upgrade                   $http_upgrade;
+      proxy_set_header              Connection                "upgrade";
+      proxy_read_timeout            1d;
+      proxy_send_timeout            1d;
+    }
+
+    location /health {
+      include nginx-cors.conf;
+      access_log off;
+      proxy_pass                    http://ditto-gateway/health;
+      proxy_http_version            1.1;
+      proxy_set_header              Host                      $http_host;
+    }
+
+    location /status {
+      include nginx-cors.conf;
+      access_log off;
+      proxy_pass                    http://ditto-gateway/overall/status;
+      proxy_http_version            1.1;
+      proxy_set_header              Host                      $http_host;
+    }
+
+    location /stats {
+      include nginx-cors.conf;
+      access_log off;
+      proxy_pass                    http://ditto-gateway/stats;
+      proxy_http_version            1.1;
+      proxy_set_header              Host                      $http_host;
+    }
+
+    location /devops {
+      include nginx-cors.conf;
+      proxy_pass                    http://ditto-gateway/devops;
+      proxy_http_version            1.1;
+      proxy_set_header              Host                      $http_host;
+    }
+
+    location /api/2/connections {
+      include nginx-cors.conf;
+      proxy_pass                    http://ditto-gateway;
+      proxy_http_version            1.1;
+      proxy_set_header              Host                      $http_host;
+      proxy_set_header              X-Real-IP                 $remote_addr;
+      proxy_set_header              X-Forwarded-For           $proxy_add_x_forwarded_for;
+    }
+  }
+}
+` $gatewayHost -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openegiz.ditto.nginx.fullname" . }}-config
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "ditto-nginx") | nindent 4 }}
+data:
+  nginx.conf: |
+    {{- $nginxConf | nindent 4 }}
+  nginx-cors.conf: |
+    set $cors '1';
+    if ($request_method = 'OPTIONS') {
+      set $cors "${cors}o";
+    }
+    if ($cors = '1') {
+      add_header 'Access-Control-Allow-Origin' '$http_origin' always;
+      add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
+      add_header 'Access-Control-Allow-Credentials' 'true' always;
+      add_header 'Access-Control-Allow-Headers' '$http_access_control_request_headers' always;
+      add_header 'Access-Control-Expose-Headers' '*' always;
+    }
+    if ($cors = '1o') {
+      add_header 'Access-Control-Max-Age' 1728000;
+      add_header 'Access-Control-Allow-Origin' '$http_origin' always;
+      add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
+      add_header 'Access-Control-Allow-Credentials' 'true' always;
+      add_header 'Access-Control-Allow-Headers' '$http_access_control_request_headers' always;
+      add_header 'Access-Control-Expose-Headers' '*' always;
+      add_header 'Content-Type' 'text/plain charset=UTF-8';
+      add_header 'Content-Length' 0;
+      return 200;
+    }
+  40-htpasswd.sh: |
+    #!/bin/sh
+    set -eu
+    : "${DITTO_PASSWORD:?DITTO_PASSWORD is not set}"
+    : "${DITTO_DEVOPS_PASSWORD:?DITTO_DEVOPS_PASSWORD is not set}"
+    umask 077
+    printf 'ditto:{PLAIN}%s\ndevops:{PLAIN}%s\n' "$DITTO_PASSWORD" "$DITTO_DEVOPS_PASSWORD" > /etc/nginx/nginx.htpasswd
+    chown nginx /etc/nginx/nginx.htpasswd
+  index.html: |
+    <!doctype html>
+    <html><head><title>OpenEgiz Ditto Gateway</title></head>
+    <body><h1>OpenEgiz Ditto API Gateway</h1><p>API available at <code>/api/2/</code>.</p></body></html>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openegiz.ditto.nginx.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "ditto-nginx") | nindent 4 }}
+spec:
+  type: {{ .Values.ditto.nginx.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.ditto.nginx.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "ditto-nginx") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openegiz.ditto.nginx.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "ditto-nginx") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "ditto-nginx") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openegiz.componentLabels" (dict "context" . "component" "ditto-nginx") | nindent 8 }}
+      annotations:
+        checksum/config: {{ $nginxConf | sha256sum }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ditto-nginx
+          image: "{{ .Values.ditto.nginx.image.repository }}:{{ .Values.ditto.nginx.image.tag }}"
+          imagePullPolicy: {{ .Values.ditto.nginx.image.pullPolicy }}
+          env:
+            - name: DITTO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: ditto-password
+            - name: DITTO_DEVOPS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: ditto-devops-password
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: config
+              mountPath: /etc/nginx/nginx-cors.conf
+              subPath: nginx-cors.conf
+              readOnly: true
+            - name: scripts
+              mountPath: /docker-entrypoint.d/40-htpasswd.sh
+              subPath: 40-htpasswd.sh
+              readOnly: true
+            - name: config
+              mountPath: /etc/nginx/html/index.html
+              subPath: index.html
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.ditto.nginx.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "openegiz.ditto.nginx.fullname" . }}-config
+        - name: scripts
+          configMap:
+            name: {{ include "openegiz.ditto.nginx.fullname" . }}-config
+            defaultMode: 0755

@@ -1,0 +1,52 @@
+{{- if .Values.ingress.enabled }}
+{{- $routes := list
+  (dict "host" .Values.ingress.hosts.grafana     "service" (include "openegiz.grafana.fullname" .)     "port" .Values.grafana.service.port     "tlsSecret" .Values.ingress.tls.grafanaSecretName)
+  (dict "host" .Values.ingress.hosts.ditto       "service" (include "openegiz.ditto.nginx.fullname" .) "port" .Values.ditto.nginx.service.port "tlsSecret" .Values.ingress.tls.dittoSecretName)
+  (dict "host" .Values.ingress.hosts.sceneServer "service" (include "openegiz.sceneServer.fullname" .) "port" .Values.sceneServer.service.port "tlsSecret" .Values.ingress.tls.sceneServerSecretName)
+-}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "openegiz.fullname" . }}
+  labels:
+    {{- include "openegiz.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    {{- if .Values.ingress.tls.secretName }}
+    - secretName: {{ .Values.ingress.tls.secretName | quote }}
+      hosts:
+        {{- range $routes }}
+        - {{ .host | quote }}
+        {{- end }}
+    {{- else }}
+    {{- range $routes }}
+    {{- if .tlsSecret }}
+    - secretName: {{ .tlsSecret | quote }}
+      hosts:
+        - {{ .host | quote }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range $routes }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .service }}
+                port:
+                  number: {{ .port }}
+    {{- end }}
+{{- end }}

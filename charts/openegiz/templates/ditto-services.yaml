@@ -1,0 +1,185 @@
+# Headless Service used by Eclipse Ditto Pekko Cluster Bootstrap (pekko-dns).
+# publishNotReadyAddresses: true is required so pods discover peers before
+# their /ready probe passes (cluster membership is a prerequisite for /ready).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openegiz.ditto.cluster.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "ditto-cluster") | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: remoting
+      port: 2551
+      targetPort: remoting
+      protocol: TCP
+    - name: management
+      port: 7626
+      targetPort: management
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "openegiz.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    openegiz.io/ditto-cluster: "true"
+{{- $clusterServiceFqdn := printf "%s.%s.svc.cluster.local" (include "openegiz.ditto.cluster.fullname" .) .Release.Namespace -}}
+{{- $mongoHost := include "openegiz.mongodb.fullname" . -}}
+{{- $javaOpts := include "openegiz.ditto.javaToolOptions" . -}}
+{{- $services := list
+  (dict "key" "policies"      "imageName" "ditto-policies"      "fullname" (include "openegiz.ditto.policies.fullname" .)      "cfg" .Values.ditto.policies      "usesMongo" true  "isGateway" false)
+  (dict "key" "things"        "imageName" "ditto-things"        "fullname" (include "openegiz.ditto.things.fullname" .)        "cfg" .Values.ditto.things        "usesMongo" true  "isGateway" false)
+  (dict "key" "things-search" "imageName" "ditto-things-search" "fullname" (include "openegiz.ditto.thingsSearch.fullname" .)  "cfg" .Values.ditto.thingsSearch  "usesMongo" true  "isGateway" false)
+  (dict "key" "connectivity"  "imageName" "ditto-connectivity"  "fullname" (include "openegiz.ditto.connectivity.fullname" .)  "cfg" .Values.ditto.connectivity  "usesMongo" true  "isGateway" false)
+  (dict "key" "gateway"       "imageName" "ditto-gateway"       "fullname" (include "openegiz.ditto.gateway.fullname" .)       "cfg" .Values.ditto.gateway       "usesMongo" false "isGateway" true)
+-}}
+{{- range $svc := $services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc.fullname }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" $ "component" (printf "ditto-%s" $svc.key)) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    {{- if $svc.isGateway }}
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+    {{- end }}
+    - name: management
+      port: 7626
+      targetPort: management
+      protocol: TCP
+    - name: prometheus
+      port: 9095
+      targetPort: prometheus
+      protocol: TCP
+  selector:
+    {{- include "openegiz.componentSelectorLabels" (dict "context" $ "component" (printf "ditto-%s" $svc.key)) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svc.fullname }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" $ "component" (printf "ditto-%s" $svc.key)) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openegiz.componentSelectorLabels" (dict "context" $ "component" (printf "ditto-%s" $svc.key)) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openegiz.componentLabels" (dict "context" $ "component" (printf "ditto-%s" $svc.key)) | nindent 8 }}
+        openegiz.io/ditto-cluster: "true"
+    spec:
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $svc.imageName }}
+          image: "{{ $.Values.ditto.image.registry }}/{{ $svc.imageName }}:{{ $.Values.ditto.image.tag }}"
+          imagePullPolicy: {{ $.Values.ditto.image.pullPolicy }}
+          env:
+            - name: JVM_CMD_ARGS_ENV
+              value: "-Xmx{{ $svc.cfg.jvmXmx }}"
+            - name: TZ
+              value: {{ $.Values.global.timezone | quote }}
+            - name: BIND_HOSTNAME
+              value: "0.0.0.0"
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: status.podIP
+            - name: REMOTE_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: status.podIP
+            - name: INSTANCE_INDEX
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: DISCOVERY_METHOD
+              value: "pekko-dns"
+            - name: CLUSTER_BS_SERVICE_NAME
+              value: {{ $clusterServiceFqdn | quote }}
+            - name: CLUSTER_BS_REQUIRED_CONTACTS
+              value: {{ $.Values.ditto.cluster.requiredContactPoints | quote }}
+            {{- if $svc.usesMongo }}
+            - name: MONGO_DB_HOSTNAME
+              value: {{ $mongoHost | quote }}
+            - name: MONGO_DB_PORT
+              value: {{ $.Values.mongodb.service.port | quote }}
+            {{- end }}
+            {{- if $svc.isGateway }}
+            - name: ENABLE_PRE_AUTHENTICATION
+              value: "true"
+            - name: DEVOPS_SECURED
+              value: "true"
+            - name: DEVOPS_AUTHENTICATION_METHOD
+              value: "basic"
+            - name: DEVOPS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" $ }}
+                  key: ditto-devops-password
+            - name: DEVOPS_STATUS_SECURED
+              value: "true"
+            - name: STATUS_AUTHENTICATION_METHOD
+              value: "basic"
+            - name: STATUS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" $ }}
+                  key: ditto-devops-password
+            {{- end }}
+            - name: JAVA_TOOL_OPTIONS
+              value: {{ $javaOpts | quote }}
+          ports:
+            {{- if $svc.isGateway }}
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            {{- end }}
+            - name: remoting
+              containerPort: 2551
+              protocol: TCP
+            - name: management
+              containerPort: 7626
+              protocol: TCP
+            - name: prometheus
+              containerPort: 9095
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /alive
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 40
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /alive
+              port: management
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml $svc.cfg.resources | nindent 12 }}
+{{- end }}

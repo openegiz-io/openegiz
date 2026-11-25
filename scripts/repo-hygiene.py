@@ -11,7 +11,6 @@ Fails if:
        `CONTRIBUTING.md`, `MIGRATION.md`, `docs/adr/*`)
      - the Grafana Plugin Bundle rebranding pipeline (`vendor/grafana-plugins/*`,
        `packaging/grafana-plugins/*`, `docs/notes-rebrand-plugins.md`)
-     - temporary legacy root Helm v2 carveout (removed in #42)
 
 Usage: python3 scripts/repo-hygiene.py [repo-root]
 """
@@ -48,10 +47,6 @@ ALLOWED_OPENTWINS_EXACT = {
     "CONTRIBUTING.md",
     "MIGRATION.md",
     "docs/notes-rebrand-plugins.md",
-    # Temporary carveout for legacy root Helm v2 chart (removed in #42).
-    "Chart.yaml",
-    "values.yaml",
-    "secrets.values.yaml.example",
     "docs/arm64-audit.md",
     "docs/notes-mongodb-arm64.md",
 }
@@ -61,19 +56,7 @@ ALLOWED_OPENTWINS_PREFIXES = (
     "docs/adr/",
     "vendor/grafana-plugins/",
     "packaging/grafana-plugins/",
-    # Temporary carveout for legacy root Helm v2 chart (removed in #42).
-    "charts/",
-    "templates/",
-    "post-install/",
 )
-
-# Files where only lines explicitly tagged `# legacy-helm-v2` are exempt (removed in #42).
-LEGACY_HELM_LINE_TAG_FILES = {
-    "Makefile",
-    "scripts/show-endpoints.sh",
-    "scripts/upload-build.sh",
-}
-LEGACY_HELM_LINE_TAG = "legacy-helm-v2"
 
 
 def list_files(root: str) -> list[str]:
@@ -136,8 +119,6 @@ def main() -> int:
                     )
 
             if not exempt_opentwins and OPENTWINS_RE.search(line):
-                if rel in LEGACY_HELM_LINE_TAG_FILES and LEGACY_HELM_LINE_TAG in line:
-                    continue
                 scrubbed = line
                 for allowed in ALLOWED_INLINE_PATTERNS:
                     scrubbed = allowed.sub("", scrubbed)

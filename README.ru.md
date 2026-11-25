@@ -128,8 +128,8 @@ Ditto обновляет двойник и публикует изменение
 | | Compose | Helm |
 |---|---|---|
 | Куда положить файлы | в `build/` (или `make copy-build SRC=<папка сборки Unity>`); отдаются сразу | `make copy-build SRC=…`, затем `make upload-build` |
-| URL файла | `http://localhost:8090/build/<файл>` | `http://<ip-ноды>:30530/build/<файл>` |
-| После перезапуска | на месте | пропадают (`emptyDir`) — загрузить заново |
+| URL файла | `http://localhost:8090/build/<файл>` | `https://<scene-ingress-host>/build/<файл>` (или через `kubectl port-forward`) |
+| После перезапуска / обновления | на месте | сохраняются на `PersistentVolumeClaim` |
 
 Ссылайтесь на каждый файл напрямую: у самой `/build/` нет индекса, она отвечает 403. Эти URL загружает браузер зрителя, поэтому хост должен быть доступен из браузера.
 
@@ -189,20 +189,21 @@ mergeInto(LibraryManager.library, {
 Ту же платформу можно развернуть в кластере Kubernetes (например, [k3s](https://k3s.io)) через Helm.
 
 > [!IMPORTANT]
-> В `values.yaml` намеренно лежат **невалидные** заглушки для всех паролей. [`secrets.values.yaml.example`](secrets.values.yaml.example) перечисляет ключи, нужные для установки; храните заполненную копию вне репозитория (например, `~/openegiz-deploy/secrets.values.yaml`, `chmod 600`) и передавайте через `-f`.
+> В [`charts/openegiz/values.yaml`](charts/openegiz/values.yaml) пароли по умолчанию пустые. [`charts/openegiz/secrets.values.yaml.example`](charts/openegiz/secrets.values.yaml.example) перечисляет ключи, нужные для установки; храните заполненную копию вне репозитория (например, `~/openegiz-deploy/secrets.values.yaml`, `chmod 600`) и передавайте через `-f`, либо укажите готовый Kubernetes Secret через `credentials.existingSecret`. Для защищённого продакшен-развёртывания добавьте [`charts/openegiz/values-prod.yaml`](charts/openegiz/values-prod.yaml).
 
 Повседневная работа — через Makefile:
 
 | Команда | Что делает |
 |---|---|
-| `make install` / `upgrade` / `uninstall` | Управление Helm-релизом (`SECRETS_FILE=~/openegiz-deploy/secrets.values.yaml`) |
-| `make status` | Статус подов |
-| `make endpoints` | Адреса сервисов (Grafana, Ditto, InfluxDB, MQTT) |
-| `make upload-build` / `make copy-build SRC=…` | Загрузка 3D-сцены WebGL / копирование в `build/` |
+| `make install` / `upgrade` / `uninstall` | Управление Helm-релизом (`RELEASE_NAME`, `NAMESPACE`, `HELM_VALUES`, `SECRETS_FILE` или `EXISTING_SECRET`) |
+| `make status` | Статус подов Helm-релиза |
+| `make endpoints` | Сервисы ClusterIP и адреса Ingress |
+| `make helm-smoke` | End-to-end black-box smoke-тест Helm-релиза |
+| `make upload-build` / `make copy-build SRC=…` | Загрузка 3D-сцены WebGL на PVC `scene-server` / копирование в `build/` |
 | `make unity-demo` | Скачать пример 3D-сцены в `build/` |
-| `make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=…` | Пример с печами против NodePort-ов Helm |
+| `make generate-data` | Пример с печами (по умолчанию Compose; для Helm задайте `DITTO_URL`, `MQTT_PORT`, `DITTO_PASSWORD` через port-forward/Ingress) |
 
-Логины фиксированы — Grafana `admin`, Ditto `ditto` и `devops`, InfluxDB `admin` (org `openegiz` в Compose, bucket `default`). **Паролей по умолчанию нет**: сгенерируйте их до первой установки.
+Логины фиксированы — Grafana `admin`, Ditto `ditto` и `devops`, InfluxDB `admin` (org `openegiz`, bucket `default`). **Паролей по умолчанию нет**: сгенерируйте их до первой установки.
 
 ## Структура репозитория
 
@@ -213,7 +214,7 @@ mergeInto(LibraryManager.library, {
 | `packaging/grafana-plugins/` | Сборка init-контейнера Grafana Plugin Bundle и проверка SRI |
 | `examples/` | Два эталонных примера: [Пример рудника](examples/mine/README.ru.md) и [Пример печи](examples/oven/) |
 | `scripts/` | Помощники Compose (пароли, предпроверка, smoke-тест, гигиена репо) и Helm |
-| `values.yaml`, `templates/`, `charts/` | Helm-чарт (в `v2.0.0` заменяется на самодостаточный Helm v3 чарт) |
+| `charts/openegiz/` | Самодостаточный Helm v3 чарт (`apiVersion: v2`) с Dev и Production профилями |
 | `vendor/grafana-plugins/` | Исходные архивы плагинов Grafana и воспроизводимый патчер ребрендинга OpenEgiz |
 | `build/` | 3D-сцена WebGL для панели Unity (пусто; `make unity-demo` скачивает пример 3D-сцены) |
 | `docs/` | Архитектурные решения (`docs/adr/`) и инженерные заметки — см. [docs/README.md](docs/README.md) |

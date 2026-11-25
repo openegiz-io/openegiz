@@ -1,0 +1,323 @@
+# =============================================================================
+# OpenEgiz Helm v3 Chart — Default (Dev Profile) values
+# =============================================================================
+# Mirrors deploy/compose/docker-compose.yml 1:1 with pinned multi-arch
+# (linux/amd64 + linux/arm64) images and ClusterIP-only services by default.
+#
+# For hardened production deployments, layer values-prod.yaml on top:
+#   helm upgrade --install openegiz charts/openegiz -n openegiz --create-namespace \
+#     -f charts/openegiz/values-prod.yaml -f ~/openegiz-deploy/secrets.values.yaml
+#
+# Never commit real credentials to git. Supply them via an external
+# secrets.values.yaml file or set credentials.existingSecret.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Deployment Profile: "dev" or "production".
+# Under "production", templates enforce ClusterIP-only MongoDB and Extended API
+# services and authenticated Mosquitto (allowAnonymous: false).
+profile: dev
+
+global:
+  imagePullSecrets: []
+  storageClass: ""
+  timezone: UTC
+
+# Credentials for Ditto, Grafana, InfluxDB, Mosquitto, and Extended API.
+# Either reference a pre-existing Secret (recommended for production / GitOps)
+# OR pass inline values via an untracked secrets values file.
+credentials:
+  # Name of a pre-existing Secret in the release namespace.
+  # Required keys:
+  #   ditto-password, ditto-devops-password, grafana-admin-password,
+  #   influxdb-admin-password, influxdb-token
+  # Additional keys when mosquitto.auth.enabled=true:
+  #   mqtt-username, mqtt-password
+  # Optional shared secret key when extendedApi.auth.enabled=true (if omitted,
+  # Extended API enforces presence of any non-empty Authorization header):
+  #   extended-api-auth-token
+  existingSecret: ""
+
+  dittoPassword: ""
+  dittoDevopsPassword: ""
+  grafanaAdminPassword: ""
+  influxdbAdminPassword: ""
+  influxdbToken: ""
+  mqttUsername: "openegiz"
+  mqttPassword: ""
+  extendedApiAuthToken: ""
+
+# ---------------------------------------------------------------------------
+# Storage: MongoDB (Eclipse Ditto & Extended API policy store)
+# ---------------------------------------------------------------------------
+mongodb:
+  image:
+    repository: docker.io/library/mongo
+    tag: "8.0.38"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 27017
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Storage: InfluxDB 2 (time-series telemetry history)
+# ---------------------------------------------------------------------------
+influxdb:
+  image:
+    repository: docker.io/library/influxdb
+    tag: "2.7.12-alpine"
+    pullPolicy: IfNotPresent
+  org: openegiz
+  bucket: default
+  service:
+    type: ClusterIP
+    port: 8086
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Messaging: Eclipse Mosquitto (MQTT broker)
+# ---------------------------------------------------------------------------
+mosquitto:
+  image:
+    repository: docker.io/library/eclipse-mosquitto
+    tag: "2.0.23"
+    pullPolicy: IfNotPresent
+  # Dev Profile allows anonymous MQTT on the cluster-internal ClusterIP service.
+  # Production Profile (values-prod.yaml) sets allowAnonymous: false and
+  # auth.enabled: true.
+  allowAnonymous: true
+  auth:
+    enabled: false
+  service:
+    type: ClusterIP
+    port: 1883
+  persistence:
+    enabled: true
+    size: 512Mi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+# ---------------------------------------------------------------------------
+# Messaging: Telegraf (Ditto MQTT Twin Events -> InfluxDB 2)
+# ---------------------------------------------------------------------------
+telegraf:
+  image:
+    repository: docker.io/library/telegraf
+    tag: "1.40.3-alpine"
+    pullPolicy: IfNotPresent
+  topicPrefix: openegiz
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# Digital Twin Engine: Eclipse Ditto (5 cluster services + nginx gateway)
+# ---------------------------------------------------------------------------
+ditto:
+  image:
+    registry: docker.io/eclipse
+    tag: "3.8.15"
+    pullPolicy: IfNotPresent
+  cluster:
+    requiredContactPoints: 2
+  # Fixed -Xmx heaps leave >= 512 MiB non-heap headroom under container limits
+  # (metaspace, JIT code cache, GC, threads), matching Compose stability tuning.
+  policies:
+    jvmXmx: "256m"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        memory: 768Mi
+  things:
+    jvmXmx: "256m"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        memory: 768Mi
+  thingsSearch:
+    jvmXmx: "256m"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        memory: 768Mi
+  connectivity:
+    jvmXmx: "384m"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 896Mi
+  gateway:
+    jvmXmx: "256m"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        memory: 768Mi
+  nginx:
+    image:
+      repository: docker.io/library/nginx
+      tag: "1.28.3-alpine"
+      pullPolicy: IfNotPresent
+    service:
+      type: ClusterIP
+      port: 80
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+# ---------------------------------------------------------------------------
+# Bootstrap Job: default policy + Ditto <-> Mosquitto connections
+# ---------------------------------------------------------------------------
+init:
+  enabled: true
+  image:
+    repository: docker.io/curlimages/curl
+    tag: "8.23.0"
+    pullPolicy: IfNotPresent
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+# ---------------------------------------------------------------------------
+# First-party Extended API (cluster-internal for Grafana plugin proxy)
+# ---------------------------------------------------------------------------
+extendedApi:
+  image:
+    repository: ghcr.io/openegiz-io/extended-api
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  auth:
+    enabled: false
+  allLogs: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Dashboards: Grafana + immutable Plugin Bundle init container
+# ---------------------------------------------------------------------------
+grafana:
+  image:
+    repository: docker.io/grafana/grafana
+    tag: "12.4.16"
+    pullPolicy: IfNotPresent
+  pluginsImage:
+    repository: ghcr.io/openegiz-io/grafana-plugins
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# 3D Scene Server (PVC-backed nginx for WebGL builds)
+# ---------------------------------------------------------------------------
+sceneServer:
+  image:
+    repository: docker.io/library/nginx
+    tag: "1.28.3-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+# ---------------------------------------------------------------------------
+# External Access: Optional TLS-enabled Ingress
+# (MongoDB and Extended API are never exposed via Ingress.)
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    grafana: grafana.openegiz.local
+    ditto: ditto.openegiz.local
+    sceneServer: scenes.openegiz.local
+  tls:
+    enabled: false
+    # Reuse one wildcard/SAN secret across all hosts, or specify per-host secrets below.
+    secretName: ""
+    grafanaSecretName: ""
+    dittoSecretName: ""
+    sceneServerSecretName: ""

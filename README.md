@@ -128,8 +128,8 @@ The repository ships no scene, so clones stay small: `make unity-demo` downloads
 | | Compose | Helm |
 |---|---|---|
 | Put the files | into `build/` (or `make copy-build SRC=<Unity output dir>`); served immediately | `make copy-build SRC=…`, then `make upload-build` |
-| File URL | `http://localhost:8090/build/<file>` | `http://<node-ip>:30530/build/<file>` |
-| After a restart | still there | gone (`emptyDir`) — upload again |
+| File URL | `http://localhost:8090/build/<file>` | `https://<scene-ingress-host>/build/<file>` (or via `kubectl port-forward`) |
+| After a restart / upgrade | still there | persisted on a `PersistentVolumeClaim` |
 
 Link each file directly: `/build/` itself has no index and returns 403. The viewer's browser fetches these URLs, so the host must be reachable from it.
 
@@ -189,20 +189,21 @@ Known panel quirks: the "Grafana query" selector is ignored (frames from all the
 The same platform can be deployed to a Kubernetes cluster (such as [k3s](https://k3s.io)) via Helm.
 
 > [!IMPORTANT]
-> `values.yaml` ships deliberately **invalid** placeholders for every credential. [`secrets.values.yaml.example`](secrets.values.yaml.example) lists the keys a fresh install needs; keep your filled-in copy outside the repository (for example `~/openegiz-deploy/secrets.values.yaml`, `chmod 600`) and pass it via `-f`.
+> [`charts/openegiz/values.yaml`](charts/openegiz/values.yaml) ships empty credentials by default. [`charts/openegiz/secrets.values.yaml.example`](charts/openegiz/secrets.values.yaml.example) lists the keys a fresh install needs; keep your filled-in copy outside the repository (for example `~/openegiz-deploy/secrets.values.yaml`, `chmod 600`) and pass it via `-f`, or supply a pre-existing Kubernetes Secret via `credentials.existingSecret`. For hardened production deployments, layer [`charts/openegiz/values-prod.yaml`](charts/openegiz/values-prod.yaml).
 
 Day-to-day Helm operations go through the Makefile:
 
 | Command | What it does |
 |---|---|
-| `make install` / `upgrade` / `uninstall` | Manage the Helm release (`SECRETS_FILE=~/openegiz-deploy/secrets.values.yaml`) |
-| `make status` | Pod status |
-| `make endpoints` | Service URLs (Grafana, Ditto, InfluxDB, MQTT) |
-| `make upload-build` / `make copy-build SRC=…` | Upload a 3D Scene WebGL build / copy into `build/` |
+| `make install` / `upgrade` / `uninstall` | Manage the Helm release (`RELEASE_NAME`, `NAMESPACE`, `HELM_VALUES`, `SECRETS_FILE` or `EXISTING_SECRET`) |
+| `make status` | Pod status for the Helm release |
+| `make endpoints` | ClusterIP services and Ingress URLs |
+| `make helm-smoke` | End-to-end black-box smoke test against the Helm release |
+| `make upload-build` / `make copy-build SRC=…` | Upload a 3D Scene WebGL build to the PVC-backed `scene-server` / copy into `build/` |
 | `make unity-demo` | Download the sample 3D Scene into `build/` |
-| `make generate-data MQTT_PORT=30511 DITTO_URL=http://localhost:30525 DITTO_PASSWORD=…` | Run the Oven Reference Example against Helm NodePorts |
+| `make generate-data` | Run the Oven Reference Example (Compose by default; override `DITTO_URL`, `MQTT_PORT`, `DITTO_PASSWORD` for port-forwarded/Ingress Helm) |
 
-Usernames are fixed — Grafana `admin`, Ditto `ditto` and `devops`, InfluxDB `admin` (org `openegiz` in Compose, bucket `default`). There are **no default passwords**: generate them before installing.
+Usernames are fixed — Grafana `admin`, Ditto `ditto` and `devops`, InfluxDB `admin` (org `openegiz`, bucket `default`). There are **no default passwords**: generate them before installing.
 
 ## Repository layout
 
@@ -213,7 +214,7 @@ Usernames are fixed — Grafana `admin`, Ditto `ditto` and `devops`, InfluxDB `a
 | `packaging/grafana-plugins/` | Reproducible Grafana Plugin Bundle init-container build & SRI verification |
 | `examples/` | Two Reference Examples: [Example Mine](examples/mine/) and [Example Oven](examples/oven/) |
 | `scripts/` | Compose helpers (credentials, preflight, smoke test, repo hygiene) and Helm helpers |
-| `values.yaml`, `templates/`, `charts/` | Helm chart (being replaced by a self-contained Helm v3 chart in v2.0.0) |
+| `charts/openegiz/` | Self-contained Helm v3 chart (`apiVersion: v2`) with Dev and Production values |
 | `vendor/grafana-plugins/` | Upstream Grafana plugin archives and reproducible OpenEgiz branding patcher |
 | `build/` | 3D Scene WebGL build served to the Unity panel (empty; `make unity-demo` downloads a sample scene) |
 | `docs/` | Architecture Decision Records (`docs/adr/`) and engineering notes — see [docs/README.md](docs/README.md) |

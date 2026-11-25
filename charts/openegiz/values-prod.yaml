@@ -1,0 +1,98 @@
+# =============================================================================
+# OpenEgiz Helm v3 Chart — Production Profile overlay
+# =============================================================================
+# Usage:
+#   helm upgrade --install openegiz charts/openegiz -n openegiz --create-namespace \
+#     -f charts/openegiz/values-prod.yaml \
+#     -f ~/openegiz-deploy/secrets.values.yaml
+#
+# Or with a pre-existing Kubernetes Secret (External Secrets / Sealed Secrets):
+#   helm upgrade --install openegiz charts/openegiz -n openegiz --create-namespace \
+#     -f charts/openegiz/values-prod.yaml \
+#     --set credentials.existingSecret=openegiz-credentials \
+#     --set ingress.hosts.grafana=grafana.example.com \
+#     --set ingress.hosts.ditto=ditto.example.com \
+#     --set ingress.hosts.sceneServer=scenes.example.com
+
+profile: production
+
+# Keep MongoDB and Extended API strictly cluster-internal (enforced by template guard).
+mongodb:
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+influxdb:
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+# Enforce authenticated MQTT: anonymous publish/subscribe is disabled.
+mosquitto:
+  allowAnonymous: false
+  auth:
+    enabled: true
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    size: 1Gi
+
+extendedApi:
+  service:
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+grafana:
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    size: 5Gi
+
+sceneServer:
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    size: 10Gi
+
+ditto:
+  nginx:
+    service:
+      type: ClusterIP
+
+# Expose Grafana, Ditto API, and 3D Scene server via TLS Ingress.
+ingress:
+  enabled: true
+  # Set to your cluster's ingress controller class (e.g. "nginx" or "traefik").
+  className: ""
+  annotations: {}
+  hosts:
+    grafana: grafana.example.com
+    ditto: ditto.example.com
+    sceneServer: scenes.example.com
+  tls:
+    enabled: true
+    secretName: openegiz-tls

@@ -1,0 +1,124 @@
+{{- $influxUrl := printf "http://%s:%v" (include "openegiz.influxdb.fullname" .) .Values.influxdb.service.port -}}
+{{- $mqttUrl := printf "tcp://%s:%v" (include "openegiz.mosquitto.fullname" .) .Values.mosquitto.service.port -}}
+{{- $telegrafConf := printf `[agent]
+  interval = "10s"
+  round_interval = true
+  metric_batch_size = 5000
+  metric_buffer_limit = 100000
+  collection_jitter = "0s"
+  flush_interval = "10s"
+  flush_jitter = "0s"
+  precision = ""
+  omit_hostname = true
+
+[[outputs.influxdb_v2]]
+  urls = ["%s"]
+  token = "${INFLUXDB_TOKEN}"
+  organization = "%s"
+  bucket = "%s"
+  timeout = "120s"
+
+[[inputs.mqtt_consumer]]
+  servers = ["%s"]
+  topics = ["%s/#"]
+  qos = 1
+%s  data_format = "json_v2"
+  [[inputs.mqtt_consumer.json_v2]]
+    [[inputs.mqtt_consumer.json_v2.tag]]
+      path = "extra.attributes._parents"
+      rename = "parent"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.tag]]
+      path = "extra.thingId"
+      rename = "thingId"
+    [[inputs.mqtt_consumer.json_v2.tag]]
+      path = "headers.ditto-originator"
+      rename = "originator"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.tag]]
+      path = "headers.correlation-id"
+      rename = "correlationId"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.tag]]
+      path = "extra.features.idSimulationRun.properties.value"
+      rename = "idSimulationRun"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.object]]
+      path = "{value}"
+      optional = true
+      excluded_keys = ["value_thingId", "value_policyId", "value_attributes", "value_features"]
+    [[inputs.mqtt_consumer.json_v2.object]]
+      path = '{"value":value.features}'
+      optional = true
+` $influxUrl .Values.influxdb.org .Values.influxdb.bucket $mqttUrl .Values.telegraf.topicPrefix (ternary "  username = \"${MQTT_USERNAME}\"\n  password = \"${MQTT_PASSWORD}\"\n" "" .Values.mosquitto.auth.enabled) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openegiz.telegraf.fullname" . }}-config
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "telegraf") | nindent 4 }}
+data:
+  telegraf.conf: |
+    {{- $telegrafConf | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openegiz.telegraf.fullname" . }}
+  labels:
+    {{- include "openegiz.componentLabels" (dict "context" . "component" "telegraf") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openegiz.componentSelectorLabels" (dict "context" . "component" "telegraf") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openegiz.componentLabels" (dict "context" . "component" "telegraf") | nindent 8 }}
+      annotations:
+        checksum/config: {{ $telegrafConf | sha256sum }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        # Run as the telegraf user (uid 100, gid 101): as root the entrypoint
+        # runs setcap on the 270 MB binary and overlayfs copy-up hits the memory limit.
+        runAsUser: 100
+        runAsGroup: 101
+        runAsNonRoot: true
+      containers:
+        - name: telegraf
+          image: "{{ .Values.telegraf.image.repository }}:{{ .Values.telegraf.image.tag }}"
+          imagePullPolicy: {{ .Values.telegraf.image.pullPolicy }}
+          env:
+            - name: INFLUXDB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: influxdb-token
+            {{- if .Values.mosquitto.auth.enabled }}
+            - name: MQTT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: mqtt-username
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "openegiz.secretName" . }}
+                  key: mqtt-password
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/telegraf/telegraf.conf
+              subPath: telegraf.conf
+              readOnly: true
+          resources:
+            {{- toYaml .Values.telegraf.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "openegiz.telegraf.fullname" . }}-config
