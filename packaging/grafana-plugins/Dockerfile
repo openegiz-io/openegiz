@@ -27,7 +27,7 @@ COPY openegiz_logo_dark.svg .
 # in vendor/grafana-plugins/.
 RUN python3 vendor/grafana-plugins/patch-branding.py --check
 
-FROM docker.io/library/busybox:1.36
+FROM docker.io/library/busybox:1.38
 LABEL org.opencontainers.image.title="openegiz-grafana-plugins" \
       org.opencontainers.image.description="OpenEgiz Grafana Plugin Bundle init container" \
       org.opencontainers.image.source="https://github.com/openegiz-io/openegiz"
