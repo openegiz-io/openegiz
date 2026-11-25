@@ -4,6 +4,8 @@ This file records notable changes to OpenEgiz. It follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-25
+
 ### Added
 
 - Production Profile for Compose with Caddy HTTPS, authenticated MQTT, and an optional MQTTS listener.
@@ -22,4 +24,5 @@ This file records notable changes to OpenEgiz. It follows [Keep a Changelog](htt
 
 - Legacy Helm subcharts, host-specific defaults, and educational material. The [v1 archive](https://github.com/openegiz-io/openegiz-v1-archive/tree/v1.0.4) preserves the historical snapshot.
 
-[Unreleased]: https://github.com/openegiz-io/openegiz/commits/main/
+[Unreleased]: https://github.com/openegiz-io/openegiz/compare/v2.0.0...main
+[2.0.0]: https://github.com/openegiz-io/openegiz/releases/tag/v2.0.0
