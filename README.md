@@ -1,7 +1,11 @@
 # OpenEgiz
 
 <p align="center">
-  <img src="docs/img/logo-readme.svg" alt="OpenEgiz logo" width="420">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/openegiz-logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/img/openegiz-logo-light.svg">
+    <img src="docs/img/openegiz-logo-light.svg" alt="OpenEgiz logo" width="380">
+  </picture>
 </p>
 
 [Русская версия](README.ru.md)
@@ -46,3 +50,21 @@ Coming from v1.x? Follow the [migration guide](MIGRATION.md) to move Twins, Poli
 See [Contributing](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) before opening an issue or pull request.
 
 OpenEgiz code is [MIT](LICENSE). Work derived from [OpenTwins](https://github.com/ertis-research/opentwins) by ERTIS Research at the University of Málaga, including the Grafana plugins, remains under the [Apache License 2.0](LICENSES/Apache-2.0.txt). See [NOTICE](NOTICE) for attribution.
+
+## Maintained by DigitalEgiz Lab
+
+<p>
+  <a href="https://digitalegiz.kz">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/img/digitalegiz-logo-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="docs/img/digitalegiz-logo-light.svg">
+      <img src="docs/img/digitalegiz-logo-light.svg" alt="DigitalEgiz Lab logo" width="200">
+    </picture>
+  </a>
+</p>
+
+OpenEgiz is developed and maintained by **DigitalEgiz Lab** at the Department of Artificial Intelligence and Big Data, Al-Farabi Kazakh National University (KazNU), Almaty, Kazakhstan.
+
+- [digitalegiz.kz](https://digitalegiz.kz) — DigitalEgiz Lab
+- [openegiz.kz](https://openegiz.kz) — OpenEgiz
+- [github.com/openegiz-io](https://github.com/openegiz-io) — GitHub organization
