@@ -35,7 +35,7 @@ RUN yarn install --frozen-lockfile --production --ignore-optional \
       ! \( -iname 'license*' -o -iname 'licence*' -o -iname 'notice*' -o -iname 'copying*' -o -iname 'copyright*' \) -delete \
  && yarn cache clean
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache nodejs \
  && addgroup -g 1000 -S node \
  && adduser -S -u 1000 -G node -H -D node
