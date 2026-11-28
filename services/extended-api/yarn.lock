@@ -1519,10 +1519,10 @@
   dependencies:
     "@types/node" "*"
 
-"@types/express-promise-router@^3.0.0":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@types/express-promise-router/-/express-promise-router-3.0.0.tgz#e70f3e87db55c14b54338c10f6cd91e1cbcca16d"
-  integrity sha512-5rUFqHnYnM282aNqIiARvJcGNMKE8JQ3Q4l1Le7PSb2bZltmJr355RWMIvnERvzdlsgmArUZBLuoCVhQ2ErzeA==
+"@types/express-promise-router@^3.0.2":
+  version "3.0.2"
+  resolved "https://registry.yarnpkg.com/@types/express-promise-router/-/express-promise-router-3.0.2.tgz#9368ea4fa0081f8cafcff730aad0410c58200857"
+  integrity sha512-dFbIQpRHeeXj7BHkOADEHDJ37Y7Tan1lYxVefCM1XVqyO/d5oNaHFGbnU3tIfNbMhuaTJ/75GJvpqI6XgpcAnA==
   dependencies:
     express-promise-router "*"
 
