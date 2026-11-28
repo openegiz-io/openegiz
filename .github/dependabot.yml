@@ -1,19 +1,42 @@
+# Monthly, grouped minor/patch updates only. Major upgrades are adopted
+# deliberately after a compatibility check, not proposed by Dependabot.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /services/extended-api
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: pip
     directory: /examples
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directories:
@@ -21,18 +44,37 @@ updates:
       - /packaging/grafana-plugins
       - /examples/mine
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker-compose
     directory: /deploy/compose
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
     ignore:
       - dependency-name: ghcr.io/openegiz-io/*
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: helm
     directory: /charts/openegiz
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
     ignore:
       - dependency-name: ghcr.io/openegiz-io/*
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
