@@ -1,7 +1,11 @@
 # OpenEgiz
 
 <p align="center">
-  <img src="docs/img/logo-readme.svg" alt="Логотип OpenEgiz" width="420">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/openegiz-logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/img/openegiz-logo-light.svg">
+    <img src="docs/img/openegiz-logo-light.svg" alt="Логотип OpenEgiz" width="380">
+  </picture>
 </p>
 
 [English version](README.md)
@@ -46,3 +50,21 @@ make smoke
 Прежде чем открыть задачу или pull request, ознакомьтесь с [правилами участия](CONTRIBUTING.md) и [кодексом поведения](CODE_OF_CONDUCT.md).
 
 Код OpenEgiz распространяется по лицензии [MIT](LICENSE). Компоненты на основе [OpenTwins](https://github.com/ertis-research/opentwins) группы ERTIS Research Университета Малаги, включая плагины Grafana, сохраняют лицензию [Apache License 2.0](LICENSES/Apache-2.0.txt). Сведения об авторах и источниках приведены в [NOTICE](NOTICE).
+
+## Разработка и поддержка
+
+<p>
+  <a href="https://digitalegiz.kz">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/img/digitalegiz-logo-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="docs/img/digitalegiz-logo-light.svg">
+      <img src="docs/img/digitalegiz-logo-light.svg" alt="Логотип DigitalEgiz Lab" width="200">
+    </picture>
+  </a>
+</p>
+
+OpenEgiz разрабатывает и поддерживает **DigitalEgiz Lab** на кафедре искусственного интеллекта и Big Data Казахского национального университета имени аль-Фараби (КазНУ), Алматы, Казахстан.
+
+- [digitalegiz.kz](https://digitalegiz.kz) — DigitalEgiz Lab
+- [openegiz.kz](https://openegiz.kz) — OpenEgiz
+- [github.com/openegiz-io](https://github.com/openegiz-io) — организация на GitHub
